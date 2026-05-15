@@ -10,57 +10,55 @@
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
         .ai-gradient { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); }
         .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.5); }
-        .status-pill { padding: 6px 14px; border-radius: 12px; font-size: 0.8rem; font-weight: 700; border: none; cursor: pointer; transition: all 0.2s; }
+        .status-pill { padding: 6px 14px; border-radius: 12px; font-size: 0.8rem; font-weight: 700; border: none; cursor: pointer; transition: all 0.2s; outline: none; }
         .status-applied { background: #dcfce7; color: #166534; }
         .status-interview { background: #fef9c3; color: #854d0e; }
         .status-rejected { background: #fee2e2; color: #991b1b; }
         .status-offer { background: #e0f2fe; color: #0369a1; }
         .status-pending { background: #f1f5f9; color: #64748b; }
+        .job-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .job-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
     </style>
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen pb-20">
     <div class="max-w-3xl mx-auto px-4 py-12">
         <!-- 標題區 -->
         <div class="flex justify-between items-end mb-10">
             <div>
                 <h1 class="text-4xl font-extrabold tracking-tight text-slate-900">Career <span class="ai-gradient text-transparent bg-clip-text">Hub</span></h1>
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">Chloe's Personal Tracker</p>
+                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2 text-indigo-500/80">Chloe's Personal Tracker</p>
             </div>
-            <button onclick="addNewJob()" class="ai-gradient text-white px-6 py-3 rounded-2xl text-sm font-bold shadow-xl hover:scale-105 active:scale-95 transition-all">
+            <button onclick="addNewJob()" class="ai-gradient text-white px-6 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-indigo-200 hover:scale-105 active:scale-95 transition-all">
                 ＋ 新增職位
             </button>
         </div>
 
         <!-- 數據板 -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8" id="stats-container">
-            <div class="glass p-4 rounded-3xl text-center shadow-sm">
-                <p class="text-[10px] font-bold text-slate-400 uppercase">總申請</p>
-                <div class="text-xl font-black" id="stat-total">0</div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="glass p-5 rounded-3xl text-center shadow-sm">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">總申請數</p>
+                <div class="text-2xl font-black mt-1" id="stat-total">0</div>
             </div>
-            <div class="glass p-4 rounded-3xl text-center shadow-sm">
-                <p class="text-[10px] font-bold text-slate-400 uppercase">面試</p>
-                <div class="text-xl font-black text-amber-500" id="stat-interview">0</div>
+            <div class="glass p-5 rounded-3xl text-center shadow-sm border-amber-100">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">面試邀約</p>
+                <div class="text-2xl font-black text-amber-500 mt-1" id="stat-interview">0</div>
             </div>
-            <div class="glass p-4 rounded-3xl text-center shadow-sm">
-                <p class="text-[10px] font-bold text-slate-400 uppercase">勝率</p>
-                <div class="text-xl font-black text-indigo-600" id="stat-rate">0%</div>
+            <div class="glass p-5 rounded-3xl text-center shadow-sm">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">當前勝率</p>
+                <div class="text-2xl font-black text-indigo-600 mt-1" id="stat-rate">0%</div>
             </div>
-            <div class="glass p-4 rounded-3xl text-center shadow-sm">
-                <p class="text-[10px] font-bold text-slate-400 uppercase">Offers</p>
-                <div class="text-xl font-black text-green-600" id="stat-offers">0</div>
+            <div class="glass p-5 rounded-3xl text-center shadow-sm border-green-100">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">收到 Offers</p>
+                <div class="text-2xl font-black text-green-600 mt-1" id="stat-offers">0</div>
             </div>
-        </div>
-
-        <!-- 診斷訊息區 (預設隱藏) -->
-        <div id="debug-log" class="hidden mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-700 font-mono overflow-auto max-h-32">
-            系統日誌：<br>
         </div>
 
         <!-- 列表區 -->
-        <div id="job-list" class="space-y-3">
-            <div class="text-center py-20 bg-white/50 rounded-[2rem] border-2 border-dashed border-slate-200">
-                <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-indigo-600 rounded-full mb-4" role="status"></div>
-                <p class="text-slate-400 text-sm font-medium">正在啟動雲端同步...</p>
+        <div id="job-list" class="space-y-4">
+            <!-- 骨架屏載入動畫 -->
+            <div class="animate-pulse space-y-4">
+                <div class="h-20 bg-slate-100 rounded-[1.5rem]"></div>
+                <div class="h-20 bg-slate-100 rounded-[1.5rem]"></div>
             </div>
         </div>
     </div>
@@ -69,15 +67,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // 日誌紀錄功能
-        function log(msg) {
-            const el = document.getElementById('debug-log');
-            el.classList.remove('hidden');
-            el.innerHTML += `> ${msg}<br>`;
-            console.log(msg);
-        }
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAOJJfeH_3WSlCl3Ncyt8RRzttu8cY77Sg",
@@ -88,82 +78,46 @@
             appId: "1:41615562183:web:654666dd152ed7455775e2"
         };
 
-        try {
-            log("正在初始化 Firebase...");
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const db = getFirestore(app);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-            log("嘗試匿名登入...");
-            signInAnonymously(auth).catch(e => log("登入失敗: " + e.message));
+        // 初始化
+        signInAnonymously(auth);
 
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    log("登入成功，UID: " + user.uid);
-                    startSync(db);
-                }
-            });
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // 監聽數據 (按時間排序)
+                const q = query(collection(db, 'jobs'), orderBy('createdAt', 'desc'));
+                onSnapshot(q, (snapshot) => {
+                    const jobs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    renderJobs(jobs);
+                    updateStats(jobs);
+                });
+            }
+        });
 
-        } catch (e) {
-            log("初始化出錯: " + e.message);
-        }
-
-        function startSync(db) {
-            log("開始監聽資料庫 'jobs' 集合...");
-            const collRef = collection(db, 'jobs');
-            
-            onSnapshot(collRef, (snapshot) => {
-                log(`收到數據更新，共 ${snapshot.docs.length} 筆資料`);
-                const jobs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                jobs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                renderJobs(jobs);
-                updateStats(jobs);
-            }, (err) => {
-                log("Firestore 錯誤: " + err.message);
-                if (err.code === 'permission-denied') {
-                    document.getElementById('job-list').innerHTML = `
-                        <div class="p-8 bg-red-50 rounded-3xl text-red-600 text-sm">
-                            <b>權限不足！</b><br>請前往 Firebase Console -> Firestore -> Rules，<br>
-                            將規則改為：<code>allow read, write: if true;</code>
-                        </div>`;
-                }
-            });
-
-            // 將操作掛載到 window，讓 HTML 按鈕可以呼叫
-            window.addNewJob = async () => {
-                const title = prompt("輸入職位名稱:");
-                const company = prompt("輸入公司名稱:");
-                if (title && company) {
-                    try {
-                        await addDoc(collection(db, 'jobs'), {
-                            title, company, status: '未投遞', createdAt: serverTimestamp()
-                        });
-                    } catch(e) { log("新增失敗: " + e.message); }
-                }
-            };
-
-            window.updateStatus = async (id, status) => {
-                await updateDoc(doc(db, 'jobs', id), { status });
-            };
-
-            window.delJob = async (id) => {
-                if (confirm("刪除這筆紀錄？")) await deleteDoc(doc(db, 'jobs', id));
-            };
-        }
-
+        // 渲染功能
         function renderJobs(jobs) {
             const list = document.getElementById('job-list');
             if (jobs.length === 0) {
-                list.innerHTML = `<div class="text-center py-16 text-slate-400 text-sm">點擊「新增職位」開始追蹤吧！</div>`;
+                list.innerHTML = `
+                    <div class="text-center py-20 bg-white/50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
+                        <p class="text-slate-400 text-sm">目前還沒有紀錄，點擊上方按鈕開始吧！</p>
+                    </div>`;
                 return;
             }
             list.innerHTML = jobs.map(job => `
-                <div class="bg-white p-5 rounded-[1.5rem] shadow-sm flex justify-between items-center group">
+                <div class="job-card bg-white p-5 rounded-[1.8rem] shadow-sm flex justify-between items-center group border border-transparent hover:border-indigo-50">
                     <div>
-                        <h3 class="font-bold text-slate-800">${job.title}</h3>
-                        <p class="text-[10px] font-extrabold text-slate-300 uppercase tracking-widest mt-0.5">${job.company}</p>
+                        <h3 class="font-extrabold text-slate-800 text-lg">${job.title}</h3>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-[10px] font-black text-indigo-400 uppercase tracking-widest">${job.company}</span>
+                            <span class="text-[10px] text-slate-300">•</span>
+                            <span class="text-[10px] text-slate-300 font-bold">${formatDate(job.createdAt)}</span>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-4">
                         <select onchange="updateStatus('${job.id}', this.value)" class="status-pill ${getStatusClass(job.status)}">
                             <option value="未投遞" ${job.status==='未投遞'?'selected':''}>未投遞</option>
                             <option value="已投遞" ${job.status==='已投遞'?'selected':''}>已投遞</option>
@@ -171,7 +125,7 @@
                             <option value="拒信" ${job.status==='拒信'?'selected':''}>拒信</option>
                             <option value="錄取" ${job.status==='錄取'?'selected':''}>錄取</option>
                         </select>
-                        <button onclick="delJob('${job.id}')" class="opacity-0 group-hover:opacity-100 text-slate-200 hover:text-red-400 transition-all">
+                        <button onclick="delJob('${job.id}')" class="opacity-0 group-hover:opacity-100 p-2 text-slate-200 hover:text-red-400 hover:bg-red-50 rounded-full transition-all">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
                     </div>
@@ -179,22 +133,46 @@
             `).join('');
         }
 
+        // 輔助函式
         function getStatusClass(s) {
-            if (s === '已投遞') return 'status-applied';
-            if (s === '面試中') return 'status-interview';
-            if (s === '拒信') return 'status-rejected';
-            if (s === '錄取') return 'status-offer';
-            return 'status-pending';
+            const map = { '已投遞': 'status-applied', '面試中': 'status-interview', '拒信': 'status-rejected', '錄取': 'status-offer' };
+            return map[s] || 'status-pending';
         }
 
         function updateStats(jobs) {
-            document.getElementById('stat-total').innerText = jobs.length;
-            document.getElementById('stat-interview').innerText = jobs.filter(j => j.status === '面試中').length;
+            const interviews = jobs.filter(j => j.status === '面試中').length;
             const offers = jobs.filter(j => j.status === '錄取').length;
+            document.getElementById('stat-total').innerText = jobs.length;
+            document.getElementById('stat-interview').innerText = interviews;
             document.getElementById('stat-offers').innerText = offers;
             const rate = jobs.length ? Math.round((offers / jobs.length) * 100) : 0;
             document.getElementById('stat-rate').innerText = rate + "%";
         }
+
+        function formatDate(ts) {
+            if (!ts) return '剛剛';
+            const date = ts.toDate();
+            return `${date.getMonth()+1}/${date.getDate()}`;
+        }
+
+        // 全域操作
+        window.addNewJob = async () => {
+            const title = prompt("職位名稱 (例如: Data Analyst):");
+            const company = prompt("公司名稱 (例如: Google):");
+            if (title && company) {
+                await addDoc(collection(db, 'jobs'), {
+                    title, company, status: '未投遞', createdAt: serverTimestamp()
+                });
+            }
+        };
+
+        window.updateStatus = async (id, status) => {
+            await updateDoc(doc(db, 'jobs', id), { status });
+        };
+
+        window.delJob = async (id) => {
+            if (confirm("確定要刪除這筆紀錄嗎？")) await deleteDoc(doc(db, 'jobs', id));
+        };
     </script>
 </body>
 </html>
