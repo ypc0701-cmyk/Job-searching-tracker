@@ -19,7 +19,6 @@
 </head>
 <body class="min-h-screen pb-20">
 
-    <!-- Firebase Setup Overlay -->
     <div id="setup-overlay" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-6 hidden">
         <div class="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl">
             <h2 class="text-2xl font-bold text-slate-800 mb-2 text-center">資料庫設定 🔐</h2>
@@ -32,7 +31,6 @@
     </div>
 
     <div class="max-w-6xl mx-auto px-6 py-12">
-        <!-- Header -->
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
             <div>
                 <h1 class="text-4xl font-extrabold tracking-tight text-slate-900">Career <span class="text-indigo-600">Hub</span></h1>
@@ -48,7 +46,6 @@
             </div>
         </div>
 
-        <!-- AI Panel -->
         <div id="ai-panel" class="hidden mb-12 glass p-8 rounded-[2.5rem] shadow-xl border-2 border-indigo-50">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
@@ -65,17 +62,13 @@
             </div>
         </div>
 
-        <!-- Stats -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12" id="stats-container"></div>
 
-        <!-- Search & List Header -->
         <div class="mb-6">
             <input type="text" id="search-input" oninput="render()" placeholder="搜尋公司、職稱或備註..." class="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl text-sm shadow-sm outline-none focus:border-indigo-400">
         </div>
 
-        <!-- Job List -->
-        <div class="space-y-3" id="job-list">
-        </div>
+        <div class="space-y-3" id="job-list"></div>
     </div>
 
     <!-- Job Modal -->
@@ -110,9 +103,9 @@
             </div>
 
             <div class="bg-indigo-50/50 p-5 rounded-2xl mb-6 border border-indigo-100/50">
-                <p class="text-[10px] font-bold text-indigo-400 uppercase mb-2">自動填寫區塊</p>
-                <textarea id="ai-scan-box" rows="2" class="input-field text-xs bg-white/80" placeholder="貼上 AI 生成的結構化內容後點擊下方同步..."></textarea>
-                <button onclick="scanAIContent()" class="mt-2 text-[10px] font-black text-indigo-500 hover:text-indigo-700 transition-colors uppercase tracking-wider">➔ 立即同步至上方欄位</button>
+                <p class="text-[10px] font-bold text-indigo-400 uppercase mb-2">自動填寫區塊 (貼上 AI 生成的內容)</p>
+                <textarea id="ai-scan-box" rows="2" class="input-field text-xs bg-white/80" placeholder="貼上內容後點擊同步..."></textarea>
+                <button onclick="scanAIContent()" class="mt-2 text-[10px] font-black text-indigo-500 hover:text-indigo-700 transition-colors uppercase tracking-wider">➔ 解析並填寫</button>
             </div>
 
             <div class="flex gap-4">
@@ -130,7 +123,7 @@
 
         let db, auth, allJobs = [], currentUser = null;
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : "chloe-career-listview";
-        const apiKey = ""; // API Key will be injected by the environment
+        const apiKey = ""; 
 
         window.onload = () => {
             const savedConfig = localStorage.getItem('chloe_fb_config') || (typeof __firebase_config !== 'undefined' ? __firebase_config : null);
@@ -236,23 +229,66 @@
         window.copyAndOpen = (text) => {
             openModal();
             document.getElementById('ai-scan-box').value = text;
-            scanAIContent();
+            setTimeout(() => scanAIContent(), 100);
         };
 
+        // 強化版解析邏輯
         window.scanAIContent = () => {
-            const text = document.getElementById('ai-scan-box').value;
-            const mapping = {
-                "職稱": "in-title", "公司": "in-company", "類別": "in-category",
-                "工作型態": "in-type", "薪資": "in-salary", "職缺URL": "in-job-url", "分數": "in-score"
+            const rawText = document.getElementById('ai-scan-box').value;
+            if (!rawText) return;
+
+            // 1. 預處理：移除所有 Markdown 符號（如 **）並統一換行
+            const cleanText = rawText.replace(/\*\*/g, '').replace(/#/g, '');
+            const lines = cleanText.split('\n');
+
+            const fieldMap = {
+                "in-score": ["分數", "Score"],
+                "in-title": ["職稱", "Job Title", "Position"],
+                "in-company": ["公司", "Company"],
+                "in-category": ["類別", "Category"],
+                "in-type": ["工作型態", "Type", "Work Style"],
+                "in-salary": ["薪資", "Salary"],
+                "in-job-url": ["URL", "網址", "連結"]
             };
-            Object.keys(mapping).forEach(key => {
-                const regex = new RegExp(`${key}[:：]\\s*(.*)`);
-                const match = text.match(regex);
-                if (match) document.getElementById(mapping[key]).value = match[1].trim();
+
+            // 逐行匹配
+            lines.forEach(line => {
+                for (const [id, keywords] of Object.entries(fieldMap)) {
+                    for (const kw of keywords) {
+                        if (line.includes(kw)) {
+                            // 抓取冒號後的所有內容
+                            const parts = line.split(/[:：]/);
+                            if (parts.length > 1) {
+                                let val = parts.slice(1).join(':').trim();
+                                // 如果是分數，只拿數字
+                                if (id === "in-score") {
+                                    const scoreMatch = val.match(/[\d.]+/);
+                                    val = scoreMatch ? scoreMatch[0] : val;
+                                }
+                                document.getElementById(id).value = val;
+                                break;
+                            }
+                        }
+                    }
+                }
             });
-            const r = text.match(/理由[:：]\s*(.*)/);
-            const s = text.match(/建議[:：]\s*(.*)/);
-            if(r || s) document.getElementById('in-notes').value = `${r?.[1]||""}\n\n${s?.[1]||""}`;
+
+            // 處理備註區塊 (理由 + 建議)
+            const reasonLines = lines.filter(l => l.includes("理由") || l.includes("Reason")).map(l => l.split(/[:：]/).slice(1).join(':').trim());
+            const adviceLines = lines.filter(l => l.includes("建議") || l.includes("Suggestion")).map(l => l.split(/[:：]/).slice(1).join(':').trim());
+            
+            let notes = "";
+            if (reasonLines.length > 0) notes += `【分析理由】\n${reasonLines.join('\n')}\n\n`;
+            if (adviceLines.length > 0) notes += `【對策建議】\n${adviceLines.join('\n')}`;
+            
+            if (notes) {
+                document.getElementById('in-notes').value = notes.trim();
+            }
+
+            // 閃爍效果
+            const container = document.getElementById('ai-scan-box');
+            container.style.backgroundColor = "#f0fdf4";
+            setTimeout(() => container.style.backgroundColor = "white", 500);
         };
 
         window.saveJob = async () => {
