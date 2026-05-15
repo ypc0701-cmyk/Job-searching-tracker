@@ -22,93 +22,66 @@
 <body class="pb-20">
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, addDoc, updateDoc, doc, deleteDoc, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- 配置偵測機制 ---
-        let firebaseConfig = {
-            apiKey: "AIzaSyAOJJfeH_3WSlCl3Ncyt8RRzttu8cY77Sg", // 核心問題：此處必須填入有效的 API Key
-            authDomain: "artifact-prod.firebaseapp.com",
-            projectId: "artifact-prod",
-            storageBucket: "artifact-prod.appspot.com",
-            messagingSenderId: "772421315263",
-            appId: "1:772421315263:web:default"
+        // --- 使用你提供的 Firebase 配置 ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAOJJfeH_3WSlCl3Ncyt8RRzttu8cY77Sg",
+            authDomain: "job-searching-tracker.firebaseapp.com",
+            projectId: "job-searching-tracker",
+            storageBucket: "job-searching-tracker.firebasestorage.app",
+            messagingSenderId: "41615562183",
+            appId: "1:41615562183:web:654666dd152ed7455775e2"
         };
 
-        // 嘗試抓取環境變數 (Canvas 專用)
-        if (typeof __firebase_config !== 'undefined') {
-            firebaseConfig = JSON.parse(__firebase_config);
-        }
+        // 初始化 Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'chloe-career-tracker-live';
-        
-        // 檢查 API Key
-        if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("Placeholder")) {
-            console.error("Missing valid API Key in firebaseConfig");
-            window.onload = () => {
-                document.getElementById('loading-text').innerHTML = `
-                    <div class="text-amber-600 font-bold">⚠️ 設定不完整</div>
-                    <p class="text-xs text-slate-500 mt-2">請在 index.html 的 firebaseConfig 中填入正確的 apiKey。</p>
-                `;
-            };
-        } else {
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const db = getFirestore(app);
+        // 全域變數以便後續操作
+        window.db = db;
+        window.appId = 'job-searching-tracker-prod';
 
-            window.db = db;
-            window.appId = appId;
-            window.auth = auth;
+        // 匿名登入
+        signInAnonymously(auth).catch((error) => {
+            console.error("驗證錯誤:", error);
+            document.getElementById('loading-text').innerText = "驗證失敗，請檢查 Firebase 設定。";
+        });
 
-            const initAuth = async () => {
-                try {
-                    // 優先使用系統提供的 Token，否則使用匿名登入
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (err) {
-                    console.error("Auth error:", err);
-                    document.getElementById('loading-text').innerText = "驗證失敗，請檢查 API Key 權限";
-                }
-            };
-
-            initAuth();
-
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    window.currentUser = user;
-                    startSync();
-                }
-            });
-        }
+        // 監聽登入狀態並開始同步
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                console.log("已登入:", user.uid);
+                startSync();
+            }
+        });
 
         function startSync() {
-            // 使用公共路徑以確保權限符合 Firebase 安全規則
-            const collRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'jobs');
+            // 使用公共路徑以便存取
+            const collRef = collection(db, 'artifacts', window.appId, 'public', 'data', 'jobs');
             
             onSnapshot(collRef, (snapshot) => {
                 let jobs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                // 前端排序以避免索引錯誤
+                // 依時間排序
                 jobs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 renderJobs(jobs);
                 updateStats(jobs);
             }, (err) => {
-                console.error("Firestore Error:", err);
-                document.getElementById('loading-text').innerText = "連線失敗: " + err.code;
+                console.error("Firestore 錯誤:", err);
+                document.getElementById('loading-text').innerText = "連線失敗，請確保 Firestore 已開啟測試模式。";
             });
         }
     </script>
 
     <div class="max-w-4xl mx-auto px-6 pt-10">
-        <!-- 標題欄 -->
         <header class="flex justify-between items-center mb-8">
             <div>
                 <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Career <span class="ai-gradient text-transparent bg-clip-text">Hub</span></h1>
-                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1 text-nowrap">Hello Chloe, 職涯進度同步中</p>
+                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1">Chloe's Job Search Tracker</p>
             </div>
-            <button onclick="addNewJob()" class="ai-gradient text-white px-6 py-2.5 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90 transition-all active:scale-95">
+            <button onclick="addNewJob()" class="ai-gradient text-white px-6 py-2.5 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90 active:scale-95 transition-all">
                 ＋ 新增職缺
             </button>
         </header>
@@ -120,12 +93,12 @@
                 <div class="text-2xl font-black text-slate-800" id="stat-total">0</div>
             </div>
             <div class="glass p-5 rounded-[2rem] card-shadow border-b-4 border-b-amber-400">
-                <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">面試邀請</p>
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">面試邀約</p>
                 <div class="text-2xl font-black text-amber-500" id="stat-interview">0</div>
             </div>
             <div class="glass p-5 rounded-[2rem] card-shadow border-b-4 border-b-indigo-400">
-                <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">平均適配</p>
-                <div class="text-2xl font-black text-indigo-600" id="stat-avg">0.0</div>
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">成功率</p>
+                <div class="text-2xl font-black text-indigo-600" id="stat-rate">0%</div>
             </div>
             <div class="glass p-5 rounded-[2rem] card-shadow border-b-4 border-b-green-400">
                 <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Offers</p>
@@ -133,28 +106,19 @@
             </div>
         </div>
 
-        <!-- 搜尋欄 -->
-        <div class="relative mb-6">
-            <input type="text" id="search" oninput="handleSearch()" placeholder="搜尋公司、職稱..." class="w-full bg-white border border-slate-100 p-4 pl-12 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm transition-all text-sm">
-            <svg class="w-5 h-5 absolute left-4 top-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-        </div>
-
         <!-- 職缺列表 -->
         <div id="list" class="space-y-4">
-            <div id="loading-text" class="text-center py-20 text-slate-300 animate-pulse font-medium">初始化連線中...</div>
+            <div id="loading-text" class="text-center py-20 text-slate-300 animate-pulse font-medium">連線至雲端資料庫中...</div>
         </div>
     </div>
 
     <script type="module">
         import { collection, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        let localJobs = [];
-
         window.renderJobs = (jobs) => {
-            localJobs = jobs;
             const container = document.getElementById('list');
             if (jobs.length === 0) {
-                container.innerHTML = `<div class="bg-white/50 p-16 rounded-[2.5rem] border-2 border-dashed border-slate-200 text-center text-slate-400 text-sm">目前沒有職缺紀錄，點擊上方按鈕開始。</div>`;
+                container.innerHTML = `<div class="bg-white/50 p-16 rounded-[2.5rem] border-2 border-dashed border-slate-200 text-center text-slate-400 text-sm">目前沒有紀錄，點擊按鈕新增第一筆申請！</div>`;
                 return;
             }
             container.innerHTML = '';
@@ -164,13 +128,9 @@
                 div.innerHTML = `
                     <div class="flex-1">
                         <h3 class="font-bold text-slate-800 text-lg">${job.title || '未命名職位'}</h3>
-                        <p class="text-xs text-slate-400 font-bold uppercase tracking-tight mt-1">${job.company || '未知公司'} • ${job.type || 'Intern'}</p>
+                        <p class="text-xs text-slate-400 font-bold uppercase tracking-tight mt-1">${job.company || '未知公司'}</p>
                     </div>
                     <div class="flex items-center gap-4 w-full md:w-auto">
-                        <div class="bg-indigo-50 px-3 py-1 rounded-xl text-center">
-                            <span class="block text-[8px] text-indigo-400 font-bold uppercase">Match</span>
-                            <span class="text-sm font-black text-indigo-600">${job.score || '7.0'}</span>
-                        </div>
                         <select onchange="updateStatus('${job.id}', this.value)" class="status-pill ${getStatusClass(job.status)} flex-1 md:flex-none">
                             <option value="未投遞" ${job.status === '未投遞' ? 'selected' : ''}>未投遞</option>
                             <option value="已投遞" ${job.status === '已投遞' ? 'selected' : ''}>已投遞</option>
@@ -193,30 +153,19 @@
         };
 
         window.delJob = async (id) => {
-            if (confirm("確定要刪除這筆職缺嗎？")) {
+            if (confirm("確定刪除這筆申請紀錄嗎？")) {
                 const docRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'jobs', id);
                 await deleteDoc(docRef);
             }
         };
 
         window.addNewJob = async () => {
-            const title = prompt("職稱 (例如: Marketing Intern):");
+            const title = prompt("申請職稱:");
             const company = prompt("公司名稱:");
             if (title && company) {
                 const collRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'jobs');
-                await addDoc(collRef, {
-                    title, company, status: '未投遞', type: 'Intern', score: 7.5, createdAt: serverTimestamp()
-                });
+                await addDoc(collRef, { title, company, status: '未投遞', createdAt: serverTimestamp() });
             }
-        };
-
-        window.handleSearch = () => {
-            const val = document.getElementById('search').value.toLowerCase();
-            const filtered = localJobs.filter(j => 
-                (j.company && j.company.toLowerCase().includes(val)) || 
-                (j.title && j.title.toLowerCase().includes(val))
-            );
-            window.renderJobs(filtered);
         };
 
         function getStatusClass(s) {
@@ -230,9 +179,10 @@
         window.updateStats = (jobs) => {
             document.getElementById('stat-total').innerText = jobs.length;
             document.getElementById('stat-interview').innerText = jobs.filter(j => j.status === '面試中').length;
-            document.getElementById('stat-offers').innerText = jobs.filter(j => j.status === '錄取').length;
-            const sc = jobs.map(j => parseFloat(j.score)).filter(s => !isNaN(s));
-            document.getElementById('stat-avg').innerText = sc.length ? (sc.reduce((a,b)=>a+b)/sc.length).toFixed(1) : "0.0";
+            const offers = jobs.filter(j => j.status === '錄取').length;
+            document.getElementById('stat-offers').innerText = offers;
+            const rate = jobs.length ? Math.round((offers / jobs.length) * 100) : 0;
+            document.getElementById('stat-rate').innerText = rate + "%";
         }
     </script>
 </body>
