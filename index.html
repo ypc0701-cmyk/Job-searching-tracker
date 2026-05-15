@@ -3,83 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Career Hub | Chloe's Secure Tracker</title>
+    <title>Career Hub | List View Mode</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfdfe; color: #1e293b; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
         .ai-gradient { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); }
         .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(241, 245, 249, 1); }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #6366f1; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .input-field { width: 100%; padding: 12px 16px; background-color: #f8fafc; border-radius: 12px; font-size: 14px; border: 1px solid #e2e8f0; outline: none; transition: border 0.2s; }
-        .input-field:focus { border-color: #6366f1; }
-        #setup-overlay { z-index: 9999; }
+        .input-field { width: 100%; padding: 12px 16px; background-color: #ffffff; border-radius: 12px; font-size: 14px; border: 1px solid #e2e8f0; outline: none; transition: border 0.2s; }
+        .input-field:focus { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1); }
+        .job-row:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); }
     </style>
 </head>
 <body class="min-h-screen pb-20">
 
-    <!-- 驗證與設定遮罩 (強制性) -->
-    <div id="setup-overlay" class="fixed inset-0 bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-6 hidden">
+    <!-- Firebase Setup Overlay -->
+    <div id="setup-overlay" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-6 hidden">
         <div class="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl">
-            <div class="text-center mb-8">
-                <div class="w-16 h-16 ai-gradient rounded-2xl flex items-center justify-center text-white text-2xl mx-auto mb-4">🔑</div>
-                <h2 class="text-2xl font-bold text-slate-800 mb-2">身分與 API 驗證</h2>
-                <p class="text-slate-500 text-sm">此裝置尚未驗證。請輸入您的 API 金鑰以啟用 AI 功能與資料同步。</p>
-            </div>
-            
+            <h2 class="text-2xl font-bold text-slate-800 mb-2 text-center">資料庫設定 🔐</h2>
+            <p class="text-slate-500 text-sm mb-8 text-center">請輸入 Firebase Config JSON 以啟用雲端儲存。</p>
             <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Gemini API Key</label>
-                    <input id="setup-gemini" type="password" class="input-field" placeholder="輸入您的 Gemini API Key">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Firebase Config (JSON)</label>
-                    <textarea id="setup-fb-config" rows="4" class="input-field font-mono text-[10px]" placeholder='{"apiKey": "...", "authDomain": "..."}'></textarea>
-                </div>
+                <textarea id="setup-fb-config" rows="8" class="input-field font-mono text-[10px] bg-slate-50" placeholder='{ "apiKey": "...", "authDomain": "...", ... }'></textarea>
             </div>
-
-            <div id="setup-error" class="hidden mt-4 p-3 bg-red-50 text-red-500 text-xs rounded-xl text-center"></div>
-
-            <button onclick="saveAndVerify()" id="verify-btn" class="w-full mt-8 ai-gradient text-white py-4 rounded-2xl font-bold flex justify-center items-center gap-3">
-                <span>驗證並啟動</span>
-                <div id="verify-loader" class="hidden loader !border-white !border-t-transparent"></div>
-            </button>
-            <p class="mt-6 text-center text-[10px] text-slate-400">為了安全，Session 結束後需重新輸入</p>
+            <button onclick="saveSetup()" class="w-full mt-8 ai-gradient text-white py-4 rounded-2xl font-bold hover:scale-[1.02] transition-transform">啟動系統</button>
         </div>
     </div>
 
-    <!-- 主介面 -->
     <div class="max-w-6xl mx-auto px-6 py-12">
         <!-- Header -->
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
             <div>
                 <h1 class="text-4xl font-extrabold tracking-tight text-slate-900">Career <span class="text-indigo-600">Hub</span></h1>
-                <p class="text-slate-400 text-[10px] font-bold uppercase mt-2">Chloe's Strategic AI Tracker</p>
+                <p class="text-slate-400 text-[10px] font-bold uppercase mt-2 tracking-widest">Chloe's Strategic Tracker (List View)</p>
             </div>
             <div class="flex flex-wrap gap-3">
-                <div id="conn-status" class="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full text-[10px] font-bold text-slate-400">
+                <div id="conn-status" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-100 rounded-full text-[10px] font-bold text-slate-400 shadow-sm">
                     <span class="w-2 h-2 rounded-full bg-slate-300"></span> 連線中...
                 </div>
-                <button onclick="toggleAIPanel()" class="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all">✨ AI 分析 JD</button>
-                <button onclick="openModal()" class="ai-gradient text-white px-8 py-3 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90">＋ 新增職位</button>
-                <button onclick="clearSession()" class="p-3 bg-slate-100 rounded-2xl text-slate-400 hover:text-red-500" title="登出此裝置">🚪</button>
+                <button onclick="toggleAIPanel()" class="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm">✨ AI 分析 JD</button>
+                <button onclick="openModal()" class="ai-gradient text-white px-8 py-3 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity">＋ 新增職位</button>
+                <button onclick="showSetup()" class="p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-indigo-500 transition-colors">⚙️</button>
             </div>
         </div>
 
         <!-- AI Panel -->
-        <div id="ai-panel" class="hidden mb-12 glass p-8 rounded-[2.5rem] shadow-sm border-2 border-indigo-50">
+        <div id="ai-panel" class="hidden mb-12 glass p-8 rounded-[2.5rem] shadow-xl border-2 border-indigo-50">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
-                    <h2 class="text-lg font-bold mb-4 text-slate-800">🤖 AI 深度評估 (Gemini 1.5 Flash)</h2>
-                    <textarea id="jd-input" rows="8" class="input-field mb-3" placeholder="貼上 Job Description..."></textarea>
-                    <button onclick="analyzeJD()" id="analyze-btn" class="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2">
-                        <span>啟動分析</span>
-                        <div id="ai-loader" class="hidden loader"></div>
+                    <h2 class="text-lg font-bold mb-4 text-slate-800 flex items-center gap-2">🤖 內建 AI 分析 <span class="text-[10px] bg-indigo-100 text-indigo-500 px-2 py-0.5 rounded">Native Mode</span></h2>
+                    <textarea id="jd-input" rows="8" class="input-field mb-3 bg-slate-50/50" placeholder="貼上 Job Description..."></textarea>
+                    <button onclick="analyzeJDNative()" id="analyze-btn" class="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 hover:bg-slate-800 transition-colors">
+                        <span>啟動 Chat AI 分析</span>
+                        <div id="ai-loader" class="hidden loader border-t-white"></div>
                     </button>
                 </div>
-                <div id="ai-result" class="bg-white p-6 rounded-2xl border-2 border-dashed border-slate-100 flex flex-col justify-center">
-                    <p class="text-sm italic text-slate-400 text-center">分析後將自動生成適配分數與建議...</p>
+                <div id="ai-result" class="bg-white/50 p-6 rounded-2xl border-2 border-dashed border-slate-100 flex flex-col justify-center">
+                    <p class="text-sm italic text-slate-400 text-center">分析結果將顯示於此...</p>
                 </div>
             </div>
         </div>
@@ -87,11 +68,14 @@
         <!-- Stats -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12" id="stats-container"></div>
 
-        <!-- Search & List -->
-        <div class="mb-6 flex gap-4">
-            <input type="text" id="search-input" oninput="render()" placeholder="搜尋公司、職稱或型態..." class="flex-1 px-6 py-3 bg-white border border-slate-200 rounded-2xl text-sm shadow-sm">
+        <!-- Search & List Header -->
+        <div class="mb-6">
+            <input type="text" id="search-input" oninput="render()" placeholder="搜尋公司、職稱或備註..." class="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl text-sm shadow-sm outline-none focus:border-indigo-400">
         </div>
-        <div id="job-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+
+        <!-- Job List -->
+        <div class="space-y-3" id="job-list">
+        </div>
     </div>
 
     <!-- Job Modal -->
@@ -99,7 +83,7 @@
         <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[95vh]">
             <div class="flex justify-between items-center mb-6">
                 <h2 id="modal-title" class="text-2xl font-extrabold text-slate-800">職位詳情</h2>
-                <button onclick="closeModal()" class="text-slate-300 hover:text-slate-500 text-xl">✕</button>
+                <button onclick="closeModal()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
             </div>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -108,7 +92,7 @@
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">類別 (Intern/Full-time)</label><input id="in-category" class="input-field"></div>
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">工作型態</label><input id="in-type" class="input-field"></div>
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">當前狀態</label>
-                    <select id="in-status" class="input-field">
+                    <select id="in-status" class="input-field cursor-pointer">
                         <option value="未投遞">未投遞</option>
                         <option value="已投遞">已投遞</option>
                         <option value="收到面試邀請">收到面試邀請</option>
@@ -116,309 +100,7 @@
                         <option value="錄取">錄取</option>
                     </select>
                 </div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">適配分數 / 薪資</label>
-                    <div class="flex gap-2">
-                        <input id="in-score" type="number" step="0.1" class="input-field w-20" placeholder="分數">
-                        <input id="in-salary" class="input-field flex-1" placeholder="薪資">
-                    </div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">適配分數 (0-10)</label>
+                    <input id="in-score" type="number" step="0.1" class="input-field" placeholder="例如: 8.5">
                 </div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">職缺 URL</label><input id="in-job-url" class="input-field"></div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Network (LinkedIn/人脈)</label><input id="in-network" class="input-field"></div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">備註 / 面試心得</label><textarea id="in-notes" rows="3" class="input-field"></textarea></div>
-            </div>
-
-            <div class="bg-indigo-50/50 p-6 rounded-3xl border-2 border-dashed border-indigo-100 mb-8">
-                <h3 class="text-xs font-bold text-indigo-600 uppercase mb-3 flex items-center gap-2">✨ AI 資訊自動同步</h3>
-                <textarea id="ai-scan-box" rows="2" class="input-field bg-white border-indigo-100" placeholder="貼上 AI 生成的結構化資訊..."></textarea>
-                <button onclick="scanAIContent()" class="mt-2 text-[10px] font-bold text-indigo-500 underline">立即提取欄位</button>
-            </div>
-
-            <div class="flex gap-4">
-                <button id="btn-delete" onclick="deleteJob()" class="hidden px-4 font-bold text-red-400 text-sm">刪除</button>
-                <button onclick="saveJob()" class="flex-1 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg">儲存</button>
-            </div>
-            <input type="hidden" id="in-id">
-        </div>
-    </div>
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
-
-        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : "chloe-career-v3";
-        let db, auth, geminiKey, allJobs = [], currentUser = null;
-
-        // 初始化：檢查 SessionStorage (新裝置或新分頁將為空)
-        window.onload = () => {
-            const cachedKey = sessionStorage.getItem('chloe_gemini_key');
-            const cachedFB = sessionStorage.getItem('chloe_fb_config');
-
-            if (!cachedKey || !cachedFB) {
-                document.getElementById('setup-overlay').classList.remove('hidden');
-            } else {
-                startApp(JSON.parse(cachedFB), cachedKey);
-            }
-        };
-
-        // 驗證並啟動
-        window.saveAndVerify = async () => {
-            const gKey = document.getElementById('setup-gemini').value.trim();
-            const fbStr = document.getElementById('setup-fb-config').value.trim();
-            const errEl = document.getElementById('setup-error');
-            const loader = document.getElementById('verify-loader');
-            const btn = document.getElementById('verify-btn');
-
-            if (!gKey || !fbStr) {
-                showError("請填寫所有欄位");
-                return;
-            }
-
-            btn.disabled = true; loader.classList.remove('hidden');
-            errEl.classList.add('hidden');
-
-            try {
-                // 1. 驗證 Gemini API Key 是否可用
-                const testRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: "hi" }] }] })
-                });
-                
-                if (!testRes.ok) throw new Error("API Key 無效或配額不足");
-
-                // 2. 驗證 Firebase Config 是否為有效 JSON
-                const fbConfig = JSON.parse(fbStr);
-
-                // 3. 儲存至 SessionStorage (關閉分頁即消失)
-                sessionStorage.setItem('chloe_gemini_key', gKey);
-                sessionStorage.setItem('chloe_fb_config', fbStr);
-
-                // 4. 啟動 App
-                startApp(fbConfig, gKey);
-                document.getElementById('setup-overlay').classList.add('hidden');
-            } catch (e) {
-                showError("驗證失敗: " + e.message);
-            } finally {
-                btn.disabled = false; loader.classList.add('hidden');
-            }
-        };
-
-        function showError(msg) {
-            const errEl = document.getElementById('setup-error');
-            errEl.innerText = msg;
-            errEl.classList.remove('hidden');
-        }
-
-        window.clearSession = () => {
-            if(confirm("要登出並清除此裝置的 API Key 嗎？")) {
-                sessionStorage.clear();
-                location.reload();
-            }
-        };
-
-        async function startApp(config, gKey) {
-            const statusEl = document.getElementById('conn-status');
-            geminiKey = gKey;
-            try {
-                const app = initializeApp(config);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        currentUser = user;
-                        statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500"></span> 雲端已同步`;
-                        const jobsCol = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'jobs');
-                        onSnapshot(query(jobsCol, orderBy('updatedAt', 'desc')), (snap) => {
-                            allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                            render();
-                        }, (err) => {
-                            statusEl.innerHTML = `<span class="text-red-500">同步錯誤</span>`;
-                        });
-                    }
-                });
-            } catch (err) { 
-                statusEl.innerHTML = "Firebase 錯誤"; 
-                document.getElementById('setup-overlay').classList.remove('hidden');
-            }
-        }
-
-        window.analyzeJD = async () => {
-            const jd = document.getElementById('jd-input').value;
-            if (!jd || !geminiKey) return;
-            const btn = document.getElementById('analyze-btn');
-            const loader = document.getElementById('ai-loader');
-            const resArea = document.getElementById('ai-result');
-            
-            btn.disabled = true; loader.classList.remove('hidden');
-            resArea.innerHTML = `<p class="text-xs text-indigo-500 animate-pulse text-center">Gemini 正在深入評估...</p>`;
-
-            const prompt = `你是專業的職涯顧問。請分析以下 JD。候選人：Chloe (MSBA, 創業背景)。
-            輸出嚴格格式：
-            分數: [0-10]
-            職稱: [名稱]
-            公司: [名稱]
-            類別: [Intern/Full-time]
-            工作型態: [On-site/Remote/Hybrid]
-            薪資: [範圍]
-            職缺URL: [網址]
-            理由: [20字內原因]
-            建議: [20字內行動]
-            JD內容: "${jd}"`;
-
-            try {
-                // 使用確定的模型名稱確保可用性
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                const data = await res.json();
-                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "分析失敗";
-                
-                resArea.innerHTML = `
-                    <div class="text-left text-xs bg-slate-50 p-4 rounded-xl border border-indigo-100 max-h-[300px] overflow-y-auto">
-                        <pre class="whitespace-pre-wrap font-sans text-slate-700">${aiText}</pre>
-                        <button onclick="copyAndOpen(\`${aiText.replace(/`/g, "\\`").replace(/\$/g, "\\$")}\`)" class="w-full mt-4 py-2 ai-gradient text-white rounded-lg font-bold">同步到新職位</button>
-                    </div>`;
-            } catch (e) { resArea.innerHTML = "分析出錯，API 可能已過期"; }
-            finally { btn.disabled = false; loader.classList.add('hidden'); }
-        };
-
-        window.copyAndOpen = (text) => {
-            openModal();
-            document.getElementById('ai-scan-box').value = text;
-            scanAIContent();
-        };
-
-        window.scanAIContent = () => {
-            const text = document.getElementById('ai-scan-box').value;
-            const mapping = {
-                "職稱": "in-title", "公司": "in-company", "類別": "in-category",
-                "工作型態": "in-type", "薪資": "in-salary", "職缺URL": "in-job-url", "分數": "in-score"
-            };
-            Object.keys(mapping).forEach(key => {
-                const regex = new RegExp(`${key}[:：]\\s*(.*)`);
-                const match = text.match(regex);
-                if (match) document.getElementById(mapping[key]).value = match[1].trim();
-            });
-            const reason = text.match(/理由[:：]\s*(.*)/);
-            const suggest = text.match(/建議[:：]\s*(.*)/);
-            if(reason || suggest) document.getElementById('in-notes').value = `分析理由：${reason?.[1]||""}\n行動建議：${suggest?.[1]||""}`;
-        };
-
-        window.saveJob = async () => {
-            if (!currentUser) return;
-            const id = document.getElementById('in-id').value;
-            const data = {
-                title: document.getElementById('in-title').value,
-                company: document.getElementById('in-company').value,
-                category: document.getElementById('in-category').value,
-                type: document.getElementById('in-type').value,
-                status: document.getElementById('in-status').value,
-                score: parseFloat(document.getElementById('in-score').value) || 0,
-                salary: document.getElementById('in-salary').value,
-                jobUrl: document.getElementById('in-job-url').value,
-                network: document.getElementById('in-network').value,
-                notes: document.getElementById('in-notes').value,
-                updatedAt: serverTimestamp()
-            };
-            try {
-                if(id) await updateDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs', id), data);
-                else await addDoc(collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs'), { ...data, createdAt: serverTimestamp() });
-                closeModal();
-            } catch (e) { alert("儲存失敗"); }
-        };
-
-        window.render = () => {
-            const list = document.getElementById('job-list');
-            const search = document.getElementById('search-input').value.toLowerCase();
-            const filtered = allJobs.filter(j => (j.company+j.title).toLowerCase().includes(search));
-            
-            list.innerHTML = filtered.map(j => `
-                <div onclick="openEdit('${j.id}')" class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 cursor-pointer hover:border-indigo-200 transition-all">
-                    <div class="flex justify-between items-center mb-3">
-                        <span class="text-[10px] font-black px-2 py-1 bg-indigo-50 text-indigo-600 rounded-md uppercase">${j.category || 'N/A'}</span>
-                        <span class="text-lg font-black ${j.score > 7 ? 'text-green-500' : 'text-indigo-600'}">${j.score || 0}</span>
-                    </div>
-                    <h3 class="font-bold text-slate-800 truncate">${j.title}</h3>
-                    <p class="text-xs text-slate-400 mb-4">${j.company} · ${j.type || '未知'}</p>
-                    <div class="flex justify-between items-center">
-                        <span class="text-[10px] font-bold px-3 py-1 rounded-full ${getStatusClass(j.status)}">${j.status}</span>
-                        ${j.jobUrl ? `<span class="text-[10px] text-slate-300">🔗 有連結</span>` : ''}
-                    </div>
-                </div>
-            `).join('');
-            updateStats(allJobs);
-        };
-
-        function getStatusClass(s) {
-            if (s === '已投遞') return 'bg-green-50 text-green-600';
-            if (s === '收到面試邀請') return 'bg-amber-50 text-amber-600';
-            if (s === '拒信') return 'bg-red-50 text-red-600';
-            if (s === '錄取') return 'bg-indigo-50 text-indigo-600';
-            return 'bg-slate-50 text-slate-400';
-        }
-
-        function updateStats(jobs) {
-            const container = document.getElementById('stats-container');
-            const stats = [
-                { label: "總追蹤數", val: jobs.length, color: "text-slate-800" },
-                { label: "面試中", val: jobs.filter(j => j.status === '收到面試邀請').length, color: "text-amber-500" },
-                { label: "已投遞", val: jobs.filter(j => j.status !== '未投遞').length, color: "text-indigo-600" },
-                { label: "錄取", val: jobs.filter(j => j.status === '錄取').length, color: "text-green-600" }
-            ];
-            container.innerHTML = stats.map(s => `
-                <div class="glass p-6 rounded-[2rem] text-center">
-                    <p class="text-[10px] font-black text-slate-400 uppercase mb-1">${s.label}</p>
-                    <div class="text-2xl font-black ${s.color}">${s.val}</div>
-                </div>`).join('');
-        }
-
-        window.openModal = () => {
-            document.getElementById('in-id').value = "";
-            document.getElementById('modal-title').innerText = "新增應徵紀錄";
-            document.querySelectorAll('#modal input, #modal textarea').forEach(i => i.value = "");
-            document.getElementById('in-status').value = "未投遞";
-            document.getElementById('btn-delete').classList.add('hidden');
-            document.getElementById('modal').classList.replace('hidden', 'flex');
-        };
-
-        window.openEdit = (id) => {
-            const j = allJobs.find(x => x.id === id);
-            if (!j) return;
-            document.getElementById('in-id').value = id;
-            document.getElementById('modal-title').innerText = "修改紀錄";
-            document.getElementById('in-title').value = j.title || "";
-            document.getElementById('in-company').value = j.company || "";
-            document.getElementById('in-category').value = j.category || "";
-            document.getElementById('in-type').value = j.type || "";
-            document.getElementById('in-status').value = j.status || "未投遞";
-            document.getElementById('in-score').value = j.score || 0;
-            document.getElementById('in-salary').value = j.salary || "";
-            document.getElementById('in-job-url').value = j.jobUrl || "";
-            document.getElementById('in-network').value = j.network || "";
-            document.getElementById('in-notes').value = j.notes || "";
-            document.getElementById('btn-delete').classList.remove('hidden');
-            document.getElementById('modal').classList.replace('hidden', 'flex');
-        };
-
-        window.deleteJob = async () => { 
-            if(confirm("確定刪除？")) { 
-                await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs', document.getElementById('in-id').value)); 
-                closeModal(); 
-            } 
-        };
-        
-        window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
-        window.toggleAIPanel = () => document.getElementById('ai-panel').classList.toggle('hidden');
-    </script>
-</body>
-</html>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">薪資範圍</label><input id="in
