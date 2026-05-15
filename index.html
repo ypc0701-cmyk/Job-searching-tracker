@@ -3,371 +3,421 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Career Hub | Chloe's Tracker</title>
+    <title>Chloe's AI Career Hub Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase 配置 - 嚴格遵守 RULE 1 & 3
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'chloe-career-v3';
+
+        // 將所有 Firebase 方法掛載到 window，解決 ReferenceError
+        window.db = db;
+        window.appId = appId;
+        window.auth = auth;
+        window.firestoreTools = { 
+            addDoc, collection, query, onSnapshot, orderBy, serverTimestamp, updateDoc, doc, deleteDoc 
+        };
+
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth Error:", error);
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                window.currentUser = user;
+                // 確保登入後執行
+                window.loadJobs();
+            }
+        });
+
+        initAuth();
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfdfe; color: #1e293b; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(226, 232, 240, 1); }
         .ai-gradient { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); }
-        .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(241, 245, 249, 1); }
-        .loader { border: 3px solid #f3f3f3; border-top: 3px solid #6366f1; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .status-badge { padding: 4px 12px; border-radius: 9999px; font-size: 10px; font-weight: 700; }
+        .input-field { width: 100%; padding: 12px 16px; background-color: #fcfdfe; border-radius: 12px; font-size: 14px; border: 1px solid #e2e8f0; outline: none; transition: all 0.2s; }
+        .input-field:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+        .loader { border-top-color: #6366f1; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="min-h-screen pb-20">
-
-    <!-- 安全配置遮罩 (保護 API Keys 不被 GitHub 洩漏) -->
-    <div id="setup-overlay" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-6 hidden">
-        <div class="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl">
-            <h2 class="text-2xl font-bold text-slate-800 mb-2 text-center">安全存取設置 🔐</h2>
-            <p class="text-slate-500 text-sm mb-8 text-center">GitHub 已設為 Public，請在此填入 API Keys。這僅會存在您的瀏覽器中，不會上傳至 GitHub。</p>
-            
-            <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase">Gemini API Key</label>
-                    <input id="setup-gemini" type="password" class="w-full px-4 py-3 bg-slate-50 rounded-xl mt-1 text-sm outline-none border border-slate-200" placeholder="AIzaSy...">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase">Firebase Config (JSON)</label>
-                    <textarea id="setup-fb-config" rows="5" class="w-full px-4 py-3 bg-slate-50 rounded-xl mt-1 text-[10px] font-mono outline-none border border-slate-200" placeholder='{ "apiKey": "...", "projectId": "...", ... }'></textarea>
-                </div>
-            </div>
-            
-            <button onclick="saveSetup()" class="w-full mt-8 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:opacity-90 transition-all">確認並儲存於本機</button>
-            <p class="text-center mt-4 text-[10px] text-slate-400">數據將自動與您的 Firebase 雲端同步</p>
-        </div>
-    </div>
-
-    <div class="max-w-6xl mx-auto px-6 py-12">
+<body class="min-h-screen pb-12">
+    <div class="max-w-6xl mx-auto p-4 md:p-8">
         <!-- Header -->
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div>
-                <h1 class="text-4xl font-extrabold tracking-tight text-slate-900">Career <span class="text-indigo-600">Hub</span></h1>
-                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-2">Hi Chloe! Your Strategic AI Tracker</p>
+                <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Career <span class="text-indigo-600">IntelliHub</span></h1>
+                <p class="text-slate-500 text-sm">Chloe 的 AI 戰略追蹤器 (Flagship Edition)</p>
             </div>
-            <div class="flex gap-3 w-full md:w-auto">
-                <div id="conn-status" class="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-full text-[10px] font-bold text-slate-400">
-                    <span class="w-2 h-2 rounded-full bg-slate-300"></span> 離線狀態
+            <div class="flex gap-2 w-full md:w-auto">
+                <button onclick="toggleAIPanel()" class="flex-1 md:flex-none bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2">
+                    ✨ AI 分析 JD
+                </button>
+                <button onclick="openModal()" class="flex-1 md:flex-none ai-gradient text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-lg hover:opacity-90 transition-all">
+                    ＋ 新增職位
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8" id="stats-container"></div>
+
+        <!-- AI Panel -->
+        <div id="ai-panel" class="hidden mb-8 glass-card p-8 rounded-[2.5rem] shadow-xl border-2 border-indigo-50">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="space-y-4">
+                    <h3 class="font-bold text-slate-800 flex items-center gap-2">🤖 JD 深度評估</h3>
+                    <textarea id="jd-input" rows="7" class="input-field" placeholder="在此貼上 Job Description (JD)..."></textarea>
+                    <button onclick="analyzeJD()" id="analyze-btn" class="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-transform active:scale-95">
+                        <span>啟動分析</span>
+                        <div id="ai-loader" class="hidden loader w-4 h-4 border-2 rounded-full"></div>
+                    </button>
                 </div>
-                <button onclick="toggleAIPanel()" class="flex-1 md:flex-none bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2">✨ AI 分析</button>
-                <button onclick="openModal()" class="flex-1 md:flex-none ai-gradient text-white px-8 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-indigo-100 hover:opacity-90 transition-all">＋ 新增</button>
-                <button onclick="showSetup()" class="p-3 bg-slate-100 rounded-2xl text-slate-400 hover:text-slate-600 transition-colors">⚙️</button>
+                <div id="ai-result" class="bg-indigo-50/30 p-6 rounded-2xl border border-dashed border-indigo-100 flex flex-col justify-center min-h-[250px]">
+                    <p class="text-slate-400 text-center italic text-sm">分析後，若分數 > 6 會自動生成列點資訊。此階段不儲存 API Key，每次重新登入皆需重新驗證環境。</p>
+                </div>
             </div>
         </div>
 
-        <!-- AI 分析面板 -->
-        <div id="ai-panel" class="hidden mb-12 glass p-8 rounded-[2.5rem] shadow-sm border-2 border-indigo-50">
-            <h2 class="text-xl font-bold mb-4 text-slate-800">🤖 Gemini 智慧分析</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase mb-2 block">貼上 Job Description</label>
-                    <textarea id="jd-input" rows="8" class="w-full p-4 rounded-2xl border border-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 text-sm" placeholder="在此處貼上 JD 內容..."></textarea>
-                    <button onclick="analyzeJD()" id="analyze-btn" class="w-full mt-3 bg-slate-900 text-white py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all">啟動 AI 深度評估</button>
-                </div>
-                <div id="ai-result" class="bg-white p-6 rounded-2xl border border-dashed border-slate-200 min-h-[250px] flex flex-col justify-center">
-                    <p class="text-sm italic text-slate-400 text-center">等待 JD 輸入中...</p>
-                </div>
+        <!-- Job List -->
+        <div class="glass-card rounded-[2.5rem] shadow-sm overflow-hidden">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+                <h2 class="font-bold text-slate-800 text-lg">應徵進度</h2>
+                <input type="text" id="search-input" oninput="renderJobs()" placeholder="搜尋公司或職稱..." class="text-xs border rounded-full px-4 py-2 outline-none focus:border-indigo-400">
             </div>
-        </div>
-
-        <!-- 統計數據 -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
-            <div class="glass p-8 rounded-[2rem] text-center shadow-sm">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">已投遞 / 總數</p>
-                <div class="text-3xl font-black" id="stat-ratio">0 / 0</div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                        <tr>
+                            <th class="px-6 py-4">職稱與公司</th>
+                            <th class="px-6 py-4">類別/型態</th>
+                            <th class="px-6 py-4">薪資</th>
+                            <th class="px-6 py-4">當前狀態</th>
+                            <th class="px-6 py-4 text-center">適配度</th>
+                            <th class="px-6 py-4 text-right">編輯</th>
+                        </tr>
+                    </thead>
+                    <tbody id="job-table-body" class="divide-y divide-slate-50 text-sm"></tbody>
+                </table>
             </div>
-            <div class="glass p-8 rounded-[2rem] text-center shadow-sm">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">面試邀請</p>
-                <div class="text-3xl font-black text-amber-500" id="stat-interview">0</div>
-            </div>
-            <div class="glass p-8 rounded-[2rem] text-center shadow-sm">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">適配度 (Avg)</p>
-                <div class="text-3xl font-black text-indigo-600" id="stat-avg-score">0.0</div>
-            </div>
-            <div class="glass p-8 rounded-[2rem] text-center shadow-sm border-2 border-green-100">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Offers</p>
-                <div class="text-3xl font-black text-green-600" id="stat-offers">0</div>
-            </div>
-        </div>
-
-        <!-- 職位列表 -->
-        <div id="job-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- 動態加載 -->
         </div>
     </div>
 
-    <!-- 表單 Modal -->
+    <!-- Job Modal -->
     <div id="modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
+        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
             <div class="flex justify-between items-center mb-6">
-                <h2 id="modal-title" class="text-2xl font-extrabold text-slate-800">職位詳情</h2>
+                <h2 id="modal-title" class="text-2xl font-extrabold text-slate-800">新增職位</h2>
                 <button onclick="closeModal()" class="text-slate-300 hover:text-slate-500 text-xl">✕</button>
             </div>
-            <div class="space-y-5">
-                <input type="hidden" id="in-id">
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">職缺名稱</label><input id="in-title" class="input-field" placeholder="例如: Product Ops Intern"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">公司名稱</label><input id="in-company" class="input-field" placeholder="例如: Instawork"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">類別 (Intern/Full-time)</label><input id="in-category" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">工作型態 (On-site/Remote)</label><input id="in-type" class="input-field"></div>
                 <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">基本資訊</label>
-                    <div class="grid grid-cols-1 gap-3">
-                        <input id="in-title" placeholder="職稱 (e.g. Product Ops Intern)" class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm outline-none border border-transparent focus:border-indigo-100">
-                        <input id="in-company" placeholder="公司名稱" class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm outline-none border border-transparent focus:border-indigo-100">
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">當前狀態</label>
-                        <select id="in-status" class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm outline-none">
-                            <option value="未投遞">未投遞</option>
-                            <option value="已投遞">已投遞</option>
-                            <option value="面試中">面試中</option>
-                            <option value="錄取">錄取</option>
-                            <option value="拒信">拒信</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">適配得分</label>
-                        <input id="in-score" type="number" step="0.1" placeholder="AI Score" class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm outline-none border border-transparent focus:border-indigo-100">
-                    </div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">狀態</label>
+                    <select id="in-status" class="input-field">
+                        <option value="未投遞">未投遞</option>
+                        <option value="已投遞">已投遞</option>
+                        <option value="面試中">面試中</option>
+                        <option value="拒信">拒信</option>
+                        <option value="錄取">錄取</option>
+                    </select>
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">備註</label>
-                    <textarea id="in-notes" rows="4" placeholder="連結、薪資資訊或進度備註..." class="w-full px-4 py-3 bg-slate-50 rounded-xl text-sm outline-none"></textarea>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">適配分數 / 薪資</label>
+                    <div class="flex gap-2">
+                        <input id="in-score" type="number" step="0.1" class="input-field w-20" placeholder="0.0">
+                        <input id="in-salary" class="input-field flex-1" placeholder="例如: $40/hr">
+                    </div>
                 </div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">職缺 URL</label><input id="in-job-url" class="input-field" placeholder="https://..."></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Network 資訊 (人脈/推薦人)</label><input id="in-network" class="input-field" placeholder="可填入 LinkedIn URL 或人名建議"></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">備註 / 分析建議</label><textarea id="in-notes" rows="3" class="input-field"></textarea></div>
             </div>
-            <div class="flex gap-4 mt-10">
-                <button id="btn-delete" onclick="deleteJob()" class="hidden px-4 py-4 font-bold text-red-400 text-sm hover:text-red-600 transition-colors">刪除</button>
-                <button onclick="saveJob()" class="flex-1 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg text-sm hover:opacity-90 transition-all">儲存職位</button>
+
+            <div class="bg-indigo-50/50 p-6 rounded-3xl border-2 border-dashed border-indigo-100 mb-8">
+                <h3 class="text-xs font-bold text-indigo-600 uppercase mb-3 flex items-center gap-2">✨ AI 資訊掃描自動填寫</h3>
+                <textarea id="ai-scan-box" rows="3" class="input-field bg-white border-indigo-100" placeholder="將 Gemini 生成的列點文字貼在此..."></textarea>
+                <button onclick="scanAIContent()" class="mt-2 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 underline">立即掃描並同步至上方欄位</button>
             </div>
+
+            <div class="flex gap-4">
+                <button id="btn-delete" onclick="deleteJob()" class="hidden px-6 font-bold text-red-400 text-sm hover:text-red-600 transition-colors">刪除紀錄</button>
+                <button onclick="saveJob()" class="flex-1 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:opacity-95 transition-all">儲存職位資料</button>
+            </div>
+            <input type="hidden" id="in-id">
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+    <script>
+        // 外部腳本訪問區域
+        let allJobs = [];
 
-        let db, auth, geminiKey, allJobs = [];
-        const APP_ID = "chloe-career-v3";
+        window.loadJobs = () => {
+            const { db, appId, currentUser, firestoreTools } = window;
+            if (!currentUser || !firestoreTools) return;
 
-        // ==========================================
-        // 初始化與安全機制
-        // ==========================================
-        window.onload = () => {
-            const savedFB = localStorage.getItem('chloe_fb_config');
-            const savedGemini = localStorage.getItem('chloe_gemini_key');
+            // 從 firestoreTools 獲取解構函數，解決 ReferenceError
+            const { query, collection, orderBy, onSnapshot } = firestoreTools;
             
-            if (!savedFB || !savedGemini) {
-                document.getElementById('setup-overlay').classList.remove('hidden');
-            } else {
-                try {
-                    startApp(JSON.parse(savedFB), savedGemini);
-                } catch (e) {
-                    localStorage.clear();
-                    location.reload();
-                }
-            }
+            const q = query(
+                collection(db, 'artifacts', appId, 'users', currentUser.uid, 'jobs'),
+                orderBy('updatedAt', 'desc')
+            );
+
+            onSnapshot(q, (snap) => {
+                allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderJobs();
+                updateStats();
+            }, (err) => {
+                console.error("Firestore Listen Error:", err);
+            });
         };
 
-        window.saveSetup = () => {
-            const fbConfig = document.getElementById('setup-fb-config').value.trim();
-            const gemini = document.getElementById('setup-gemini').value.trim();
-            if(!fbConfig || !gemini) return alert("請填寫完整資訊");
-            try {
-                JSON.parse(fbConfig);
-                localStorage.setItem('chloe_fb_config', fbConfig);
-                localStorage.setItem('chloe_gemini_key', gemini);
-                location.reload();
-            } catch (e) {
-                alert("Firebase Config 格式錯誤");
-            }
-        };
+        window.renderJobs = () => {
+            const table = document.getElementById('job-table-body');
+            const term = document.getElementById('search-input').value.toLowerCase();
+            const filtered = allJobs.filter(j => (j.company + j.title).toLowerCase().includes(term));
 
-        window.showSetup = () => document.getElementById('setup-overlay').classList.remove('hidden');
-
-        async function startApp(config, gKey) {
-            const statusEl = document.getElementById('conn-status');
-            geminiKey = gKey;
-            try {
-                const app = initializeApp(config);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                await signInAnonymously(auth);
-
-                statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500"></span> 雲端已連線`;
-                statusEl.classList.replace('text-slate-400', 'text-green-600');
-
-                // 使用路徑規範: /artifacts/{appId}/users/{userId}/jobs
-                const userId = auth.currentUser.uid;
-                const jobsCol = collection(db, 'artifacts', APP_ID, 'users', userId, 'jobs');
-
-                onSnapshot(jobsCol, (snap) => {
-                    allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                    render();
-                }, (err) => console.error("Firestore Listen Error:", err));
-            } catch (err) {
-                statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500"></span> 連線錯誤`;
-            }
-        }
-
-        // ==========================================
-        // AI 分析功能
-        // ==========================================
-        window.analyzeJD = async () => {
-            const jd = document.getElementById('jd-input').value;
-            if (!jd) return alert("請輸入 JD");
-            const btn = document.getElementById('analyze-btn');
-            const resultArea = document.getElementById('ai-result');
-            
-            btn.disabled = true;
-            resultArea.innerHTML = `<div class="flex flex-col items-center py-10"><div class="loader mb-3"></div><p class="text-xs text-indigo-500 font-bold uppercase tracking-widest">Gemini 正在精算...</p></div>`;
-
-            const prompt = `你是頂級求職顧問。根據 JD: "${jd}"，對比 Chloe (MSBA @ BU, Garmin Intern, Founder of Pour.selection)。
-            請嚴格以 JSON 格式回傳: {"score":數字, "title":"職稱", "company":"公司", "reason":"50字內原因", "suggest":"建議點"}。不回傳任何 Markdown 標籤。`;
-
-            try {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${geminiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                const data = await res.json();
-                const ai = JSON.parse(data.candidates[0].content.parts[0].text.trim().replace(/```json|```/g, ""));
-
-                resultArea.innerHTML = `
-                    <div class="space-y-4 text-left">
-                        <div class="flex justify-between items-start">
-                            <h3 class="font-bold text-slate-800 text-lg">${ai.company}</h3>
-                            <span class="text-3xl font-black text-indigo-600">${ai.score}<span class="text-[10px] text-slate-300">/10</span></span>
-                        </div>
-                        <p class="text-sm font-bold text-indigo-400 -mt-2">${ai.title}</p>
-                        <p class="text-xs text-slate-500 leading-relaxed">${ai.reason}</p>
-                        <div class="p-4 bg-indigo-50 rounded-2xl text-[10px] font-bold text-indigo-600 leading-tight">💡 建議：${ai.suggest}</div>
-                        <button onclick='quickFill(${JSON.stringify(ai).replace(/'/g, "&apos;")})' class="w-full py-3 ai-gradient text-white rounded-xl text-xs font-bold shadow-md">快速匯入追蹤表</button>
-                    </div>`;
-            } catch (e) {
-                resultArea.innerHTML = `<p class="text-xs text-red-400 text-center">分析失敗，請檢查 Key 或內容。</p>`;
-            } finally {
-                btn.disabled = false;
-            }
-        };
-
-        window.quickFill = (ai) => {
-            openModal();
-            document.getElementById('in-title').value = ai.title;
-            document.getElementById('in-company').value = ai.company;
-            document.getElementById('in-score').value = ai.score;
-        };
-
-        // ==========================================
-        // 渲染與統計
-        // ==========================================
-        function render() {
-            const list = document.getElementById('job-list');
-            if (allJobs.length === 0) {
-                list.innerHTML = `<div class="col-span-full text-center py-20 text-slate-300 italic">尚未有追蹤職位，使用 AI 立即分析！</div>`;
-                return;
-            }
-            allJobs.sort((a,b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
-            list.innerHTML = allJobs.map(j => `
-                <div onclick="openEdit('${j.id}')" class="bg-white p-6 rounded-[2.2rem] shadow-sm hover:shadow-md transition-all border border-slate-50 hover:border-indigo-100 cursor-pointer group">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="p-3 bg-indigo-50 rounded-2xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                            <span class="text-xl">💼</span>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-lg font-black text-slate-800">${j.score || 0}<span class="text-[10px] text-slate-300 font-normal"> pts</span></div>
-                        </div>
-                    </div>
-                    <h3 class="font-bold text-slate-800 leading-tight mb-1 truncate">${j.title}</h3>
-                    <p class="text-xs text-slate-400 mb-4">${j.company}</p>
-                    <div class="${getStatusStyle(j.status)} status-badge inline-block">${j.status}</div>
-                </div>
+            table.innerHTML = filtered.map(j => `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-5">
+                        <div class="font-bold text-slate-800">${j.title}</div>
+                        <div class="text-xs text-slate-400">${j.company}</div>
+                    </td>
+                    <td class="px-6 py-5">
+                        <div class="text-slate-600 font-medium">${j.category || 'N/A'}</div>
+                        <div class="text-[10px] text-slate-400 uppercase font-bold">${j.type || ''}</div>
+                    </td>
+                    <td class="px-6 py-5 text-slate-500">${j.salary || '-'}</td>
+                    <td class="px-6 py-5">
+                        <span class="px-3 py-1 rounded-full text-[10px] font-black ${getStatusClass(j.status)}">${j.status}</span>
+                    </td>
+                    <td class="px-6 py-5 text-center">
+                        <span class="font-black ${j.score >= 8 ? 'text-green-600' : (j.score >= 6 ? 'text-amber-500' : 'text-slate-300')}">${j.score || '0.0'}</span>
+                    </td>
+                    <td class="px-6 py-5 text-right">
+                        <button onclick="openEdit('${j.id}')" class="text-indigo-400 hover:text-indigo-600 font-bold text-xs">修改</button>
+                    </td>
+                </tr>
             `).join('');
-            updateStats();
-        }
+        };
 
-        function getStatusStyle(s) {
-            const styles = {
-                '錄取': 'bg-green-50 text-green-600',
-                '面試中': 'bg-amber-50 text-amber-600',
-                '拒信': 'bg-red-50 text-red-600',
-                '已投遞': 'bg-blue-50 text-blue-600',
-                '未投遞': 'bg-slate-50 text-slate-400'
-            };
-            return styles[s] || styles['未投遞'];
+        function getStatusClass(s) {
+            if (s === '已投遞') return 'bg-green-50 text-green-600';
+            if (s === '面試中') return 'bg-amber-50 text-amber-600';
+            if (s === '拒信') return 'bg-red-50 text-red-600';
+            if (s === '錄取') return 'bg-indigo-50 text-indigo-600';
+            return 'bg-slate-100 text-slate-400';
         }
 
         function updateStats() {
-            const applied = allJobs.filter(j => j.status !== '未投遞').length;
-            const interview = allJobs.filter(j => j.status === '面試中').length;
-            const offer = allJobs.filter(j => j.status === '錄取').length;
-            const avg = allJobs.length ? (allJobs.reduce((acc, j) => acc + (parseFloat(j.score)||0), 0) / allJobs.length).toFixed(1) : 0;
-            
-            document.getElementById('stat-ratio').innerText = `${applied} / ${allJobs.length}`;
-            document.getElementById('stat-interview').innerText = interview;
-            document.getElementById('stat-offers').innerText = offer;
-            document.getElementById('stat-avg-score').innerText = avg;
+            const stats = [
+                { label: "總追蹤", val: allJobs.length, color: "text-slate-800" },
+                { label: "已投遞", val: allJobs.filter(j => j.status !== '未投遞').length, color: "text-indigo-600" },
+                { label: "面試中", val: allJobs.filter(j => j.status === '面試中').length, color: "text-amber-500" },
+                { label: "平均適配", val: (allJobs.reduce((a, b) => a + (b.score || 0), 0) / (allJobs.length || 1)).toFixed(1), color: "text-emerald-500" }
+            ];
+            const container = document.getElementById('stats-container');
+            if (container) {
+                container.innerHTML = stats.map(s => `
+                    <div class="glass-card p-5 rounded-3xl shadow-sm">
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">${s.label}</p>
+                        <div class="text-2xl font-black ${s.color}">${s.val}</div>
+                    </div>
+                `).join('');
+            }
         }
 
-        // ==========================================
-        // Firestore 操作
-        // ==========================================
-        window.saveJob = async () => {
-            if (!auth.currentUser) return;
-            const id = document.getElementById('in-id').value;
-            const data = {
-                title: document.getElementById('in-title').value,
-                company: document.getElementById('in-company').value,
-                status: document.getElementById('in-status').value,
-                score: parseFloat(document.getElementById('in-score').value) || 0,
-                notes: document.getElementById('in-notes').value,
-                updatedAt: serverTimestamp(),
-                createdAt: serverTimestamp()
-            };
-            
-            const colRef = collection(db, 'artifacts', APP_ID, 'users', auth.currentUser.uid, 'jobs');
-            try {
-                if(id) {
-                    delete data.createdAt;
-                    await updateDoc(doc(db, 'artifacts', APP_ID, 'users', auth.currentUser.uid, 'jobs', id), data);
-                } else {
-                    await addDoc(colRef, data);
-                }
-                closeModal();
-            } catch (e) { alert("儲存失敗"); }
-        };
-
-        window.deleteJob = async () => {
-            if(confirm("確定刪除？")) {
-                await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', auth.currentUser.uid, 'jobs', document.getElementById('in-id').value));
-                closeModal();
-            }
-        };
-
-        // UI Helpers
         window.openModal = () => {
-            document.getElementById('modal-title').innerText = "新增職位";
             document.getElementById('in-id').value = "";
+            document.getElementById('modal-title').innerText = "新增應徵紀錄";
             document.querySelectorAll('#modal input, #modal textarea').forEach(i => i.value = "");
+            document.getElementById('in-status').value = "未投遞";
             document.getElementById('btn-delete').classList.add('hidden');
             document.getElementById('modal').classList.replace('hidden', 'flex');
         };
 
         window.openEdit = (id) => {
             const j = allJobs.find(x => x.id === id);
-            document.getElementById('modal-title').innerText = "編輯紀錄";
+            if(!j) return;
             document.getElementById('in-id').value = id;
+            document.getElementById('modal-title').innerText = "修改職位詳情";
             document.getElementById('in-title').value = j.title || "";
             document.getElementById('in-company').value = j.company || "";
+            document.getElementById('in-category').value = j.category || "";
+            document.getElementById('in-type').value = j.type || "";
             document.getElementById('in-status').value = j.status || "未投遞";
             document.getElementById('in-score').value = j.score || 0;
+            document.getElementById('in-salary').value = j.salary || "";
+            document.getElementById('in-job-url').value = j.jobUrl || "";
+            document.getElementById('in-network').value = j.network || "";
             document.getElementById('in-notes').value = j.notes || "";
             document.getElementById('btn-delete').classList.remove('hidden');
             document.getElementById('modal').classList.replace('hidden', 'flex');
         };
 
+        window.saveJob = async () => {
+            const { db, appId, currentUser, firestoreTools } = window;
+            if (!currentUser) return;
+            const id = document.getElementById('in-id').value;
+            const data = {
+                title: document.getElementById('in-title').value,
+                company: document.getElementById('in-company').value,
+                category: document.getElementById('in-category').value,
+                type: document.getElementById('in-type').value,
+                status: document.getElementById('in-status').value,
+                score: parseFloat(document.getElementById('in-score').value) || 0,
+                salary: document.getElementById('in-salary').value,
+                jobUrl: document.getElementById('in-job-url').value,
+                network: document.getElementById('in-network').value,
+                notes: document.getElementById('in-notes').value,
+                updatedAt: firestoreTools.serverTimestamp()
+            };
+
+            try {
+                if (id) {
+                    await firestoreTools.updateDoc(firestoreTools.doc(db, 'artifacts', appId, 'users', currentUser.uid, 'jobs', id), data);
+                } else {
+                    await firestoreTools.addDoc(firestoreTools.collection(db, 'artifacts', appId, 'users', currentUser.uid, 'jobs'), { ...data, createdAt: firestoreTools.serverTimestamp() });
+                }
+                closeModal();
+            } catch (e) { alert("儲存失敗，請檢查權限設定。"); }
+        };
+
+        window.deleteJob = async () => {
+            if (!confirm("確定刪除此紀錄？")) return;
+            const { db, appId, currentUser, firestoreTools } = window;
+            const id = document.getElementById('in-id').value;
+            await firestoreTools.deleteDoc(firestoreTools.doc(db, 'artifacts', appId, 'users', currentUser.uid, 'jobs', id));
+            closeModal();
+        };
+
         window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
         window.toggleAIPanel = () => document.getElementById('ai-panel').classList.toggle('hidden');
+
+        // API 保護機制：此處設為空字串，保證不儲存 key 到任何持久化媒介中
+        const apiKey = ""; 
+
+        async function analyzeJD() {
+            if (!apiKey) {
+                document.getElementById('ai-result').innerHTML = `<div class="p-4 bg-red-50 text-red-500 text-xs rounded-xl border border-red-100">⚠️ 偵測到新裝置/新會話：API Key 未配置。請確認環境權限或重新注入 Key。</div>`;
+                return;
+            }
+
+            const jd = document.getElementById('jd-input').value;
+            if (!jd) return;
+            const btn = document.getElementById('analyze-btn');
+            const loader = document.getElementById('ai-loader');
+            const resArea = document.getElementById('ai-result');
+            
+            btn.disabled = true; loader.classList.remove('hidden');
+            resArea.innerHTML = `<p class="text-xs text-indigo-500 animate-pulse text-center">Gemini 正進行戰略分析中...</p>`;
+
+            const prompt = `你是求職專家。分析此 JD: "${jd}"。
+            候選人: Pin-Chu (Chloe) Yin, MSBA @ BU, Garmin Intern, Amazon 1.8M Data, Founder of Pour.selection.
+            
+            規則:
+            1. 適配分數 0-10。
+            2. 若分數 > 6，嚴格按下列格式回覆：
+               分數: [數字]
+               職稱: [名稱]
+               公司: [名稱]
+               類別: [Intern/FT]
+               工作型態: [On-site/Remote/Hybrid]
+               薪資: [範圍/未知]
+               職缺URL: [網址]
+               Network建議: [建議]
+               理由: [理由]
+               建議: [重點]
+            3. 若分數 <= 6，簡述原因。`;
+
+            const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
+                try {
+                    const res = await fetch(url, options);
+                    if (!res.ok) throw new Error("API Error");
+                    return await res.json();
+                } catch (e) {
+                    if (retries > 0) {
+                        await new Promise(r => setTimeout(r, backoff));
+                        return fetchWithRetry(url, options, retries - 1, backoff * 2);
+                    }
+                    throw e;
+                }
+            };
+
+            try {
+                const data = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                
+                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "無法生成分析";
+                resArea.innerHTML = `
+                    <div class="text-left text-xs bg-white p-4 rounded-xl border border-indigo-100 overflow-y-auto max-h-[300px]">
+                        <pre class="whitespace-pre-wrap font-sans text-slate-700">${aiText}</pre>
+                        <button onclick="copyToScanner('${aiText.replace(/'/g, "").replace(/\n/g, "\\n")}')" class="w-full mt-4 py-3 ai-gradient text-white rounded-xl font-bold">同步至新增職位</button>
+                    </div>`;
+            } catch (e) { 
+                resArea.innerHTML = `<p class="text-red-500 text-center text-xs">分析失敗，請檢查網路連線或 API Key 是否正確。</p>`;
+            } finally { 
+                btn.disabled = false; loader.classList.add('hidden'); 
+            }
+        }
+
+        window.copyToScanner = (text) => {
+            openModal();
+            const cleanText = text.replace(/\\n/g, '\n');
+            document.getElementById('ai-scan-box').value = cleanText;
+            scanAIContent();
+        };
+
+        window.scanAIContent = () => {
+            const text = document.getElementById('ai-scan-box').value;
+            const map = {
+                "職稱": "in-title", "公司": "in-company", "類別": "in-category",
+                "工作型態": "in-type", "薪資": "in-salary", "職缺URL": "in-job-url", "分數": "in-score",
+                "Network建議": "in-network"
+            };
+            Object.keys(map).forEach(key => {
+                const regex = new RegExp(`${key}[:：]\\s*(.*)`);
+                const match = text.match(regex);
+                if (match) {
+                    let val = match[1].trim().replace(/\*\*/g, '');
+                    const el = document.getElementById(map[key]);
+                    if (el) el.value = val;
+                }
+            });
+            const reason = text.match(/理由[:：]\s*(.*)/);
+            const suggest = text.match(/建議[:：]\s*(.*)/);
+            if(reason || suggest) {
+                const noteEl = document.getElementById('in-notes');
+                if (noteEl) {
+                    noteEl.value = `${reason?.[1]?.replace(/\*\*/g, '') || ""}\n\n${suggest?.[1]?.replace(/\*\*/g, '') || ""}`;
+                }
+            }
+        };
     </script>
 </body>
 </html>
