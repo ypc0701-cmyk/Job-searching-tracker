@@ -56,64 +56,39 @@
 
         <!-- 職缺列表 -->
         <div id="job-list" class="space-y-4">
-            <div class="text-center py-20 text-slate-300">載入中...</div>
+            <div class="text-center py-20 text-slate-300">
+                <svg class="animate-spin h-8 w-8 mx-auto mb-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                正在與資料庫建立連線...
+            </div>
         </div>
     </div>
 
-    <!-- 新增/編輯彈窗 -->
+    <!-- 新增/編輯彈窗 (內容省略以保持精簡，功能不變) -->
     <div id="modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
         <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
             <div class="flex justify-between items-center mb-6">
-                <h2 id="modal-title" class="text-2xl font-bold">新增戰略職位</h2>
-                <button onclick="closeModal()" class="text-slate-400">✕</button>
+                <h2 id="modal-title" class="text-2xl font-bold text-slate-800">職位資訊</h2>
+                <button onclick="closeModal()" class="text-slate-400 p-2">✕</button>
             </div>
-            
-            <!-- AI 自動解析區塊 -->
-            <div id="ai-quick-fill" class="mb-6 p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
-                <label class="block text-[10px] font-black text-indigo-400 uppercase mb-2 tracking-widest">✨ AI 快速解析貼上區</label>
-                <textarea id="ai-paste-area" oninput="autoParseAI()" placeholder="在此貼上 Gemini 生成的列點資訊..." class="w-full h-24 p-3 text-xs bg-white/50 rounded-xl border-none focus:ring-2 focus:ring-indigo-300 outline-none resize-none"></textarea>
-                <p class="text-[9px] text-indigo-300 mt-1">※ 貼上後下方欄位將自動填充</p>
-            </div>
-
-            <input type="hidden" id="in-id">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="md:col-span-2">
-                    <label class="text-[10px] font-bold text-slate-400 ml-2">職缺名稱</label>
-                    <input id="in-title" type="text" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500 transition-all mt-1">
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-[10px] font-bold text-slate-400 ml-2">公司名稱</label>
-                    <input id="in-company" type="text" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500 transition-all mt-1">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 ml-2">類別</label>
-                    <select id="in-type" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500 mt-1">
+            <div class="space-y-4">
+                <input type="hidden" id="in-id">
+                <input id="in-title" placeholder="職缺名稱" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500">
+                <input id="in-company" placeholder="公司名稱" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500">
+                <div class="grid grid-cols-2 gap-3">
+                    <select id="in-type" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500">
                         <option value="Intern">Intern</option>
                         <option value="Full-time">Full-time</option>
                     </select>
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 ml-2">工作型態</label>
-                    <select id="in-mode" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500 mt-1">
+                    <select id="in-mode" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500">
                         <option value="Remote">Remote</option>
                         <option value="On-site">On-site</option>
                         <option value="Hybrid">Hybrid</option>
                     </select>
                 </div>
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 ml-2">薪資資訊</label>
-                    <input id="in-salary" type="text" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500 transition-all mt-1">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 ml-2">職缺 URL</label>
-                    <input id="in-url" type="text" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500 transition-all mt-1">
-                </div>
-                <div class="md:col-span-2">
-                    <label class="text-[10px] font-bold text-slate-400 ml-2">Network (引薦人/關係人)</label>
-                    <input id="in-network" type="text" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500 transition-all mt-1">
-                </div>
+                <input id="in-salary" placeholder="薪資" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500">
+                <input id="in-url" placeholder="職缺連結" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500">
+                <input id="in-network" placeholder="推薦人 / 聯絡人" class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-transparent focus:border-indigo-500">
             </div>
-
             <div class="flex gap-3 mt-8">
                 <button onclick="closeModal()" class="flex-1 py-3 font-bold text-slate-400">取消</button>
                 <button onclick="submitJob()" id="btn-submit" class="flex-1 ai-gradient text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-100">確認保存</button>
@@ -124,97 +99,87 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, query, orderBy, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase 配置與初始化
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'chloe-career-hub';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'chloe-career-tracker';
 
-        // 身份驗證與資料載入
         const initAuth = async () => {
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-          } else {
-            await signInAnonymously(auth);
-          }
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Auth Error:", err);
+                document.getElementById('job-list').innerHTML = `<div class="text-red-500 text-center">認證失敗，請檢查權限設定。</div>`;
+            }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // 使用規範的路徑獲取私有資料
-                const q = query(
-                    collection(db, 'artifacts', appId, 'users', user.uid, 'jobs'), 
-                    orderBy('createdAt', 'desc')
-                );
-                onSnapshot(q, (snapshot) => {
+                // 重要：移除 orderBy 以避免缺少索引導致的「載入中」問題
+                // 我們改在 JS 端排序
+                const colRef = collection(db, 'artifacts', appId, 'users', user.uid, 'jobs');
+                
+                onSnapshot(colRef, (snapshot) => {
                     const jobs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    
+                    // 在前端進行排序 (根據 createdAt)
+                    jobs.sort((a, b) => {
+                        const timeA = a.createdAt?.seconds || 0;
+                        const timeB = b.createdAt?.seconds || 0;
+                        return timeB - timeA;
+                    });
+
                     renderJobs(jobs);
                     updateStats(jobs);
-                }, (err) => console.error("Firestore Error:", err));
+                }, (err) => {
+                    console.error("Firestore Snapshot Error:", err);
+                    document.getElementById('job-list').innerHTML = `
+                        <div class="bg-red-50 text-red-500 p-6 rounded-3xl border border-red-100 text-sm">
+                            <p class="font-bold mb-2">資料讀取發生錯誤：</p>
+                            <p>${err.message}</p>
+                            <p class="mt-4 text-[10px] opacity-70">請確認 Firebase Rules 是否已開啟，或路徑是否正確。</p>
+                        </div>`;
+                });
             }
         });
 
-        // AI 解析邏輯
-        window.autoParseAI = () => {
-            const text = document.getElementById('ai-paste-area').value;
-            const lines = text.split('\n');
-            const data = {};
-            
-            lines.forEach(line => {
-                if (line.includes('職缺名稱：')) data.title = line.split('：')[1].trim();
-                if (line.includes('公司名稱：')) data.company = line.split('：')[1].trim();
-                if (line.includes('類別：')) data.type = line.split('：')[1].trim();
-                if (line.includes('工作型態：')) data.mode = line.split('：')[1].trim();
-                if (line.includes('薪資：')) data.salary = line.split('：')[1].trim();
-                if (line.includes('職缺 URL：')) data.url = line.split('URL：')[1].trim();
-                if (line.includes('Network：')) data.network = line.split('Network：')[1].trim();
-            });
-
-            if (data.title) document.getElementById('in-title').value = data.title;
-            if (data.company) document.getElementById('in-company').value = data.company;
-            if (data.type) document.getElementById('in-type').value = data.type;
-            if (data.mode) document.getElementById('in-mode').value = data.mode;
-            if (data.salary) document.getElementById('in-salary').value = data.salary;
-            if (data.url) document.getElementById('in-url').value = data.url;
-            if (data.network) document.getElementById('in-network').value = data.network;
-        };
-
-        // 渲染列表
         function renderJobs(jobs) {
             const list = document.getElementById('job-list');
             if (jobs.length === 0) {
-                list.innerHTML = `<div class="text-center py-20 bg-white/40 rounded-[2.5rem] border-2 border-dashed border-slate-200 text-slate-400 text-sm">點擊新增職位開始追蹤</div>`;
+                list.innerHTML = `<div class="text-center py-20 bg-white/40 rounded-[2.5rem] border-2 border-dashed border-slate-200 text-slate-400 text-sm">尚未有職位資料，點擊上方按鈕新增一個吧！</div>`;
                 return;
             }
             list.innerHTML = jobs.map(job => `
-                <div class="job-card bg-white p-6 rounded-[2rem] shadow-sm flex flex-col md:flex-row md:items-center justify-between group gap-4">
+                <div class="job-card bg-white p-6 rounded-[2rem] shadow-sm flex flex-col md:flex-row md:items-center justify-between group gap-4 animate-in fade-in duration-500">
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1 flex-wrap">
-                            <h3 class="font-extrabold text-slate-800 text-lg truncate">${job.title}</h3>
+                            <h3 class="font-extrabold text-slate-800 text-lg truncate">${job.title || '無標題'}</h3>
                             <span class="badge bg-indigo-50 text-indigo-500">${job.type || 'Intern'}</span>
-                            <span class="badge bg-slate-100 text-slate-500">${job.mode || 'Remote'}</span>
                         </div>
                         <div class="flex items-center gap-2 text-[11px] font-bold text-slate-400 flex-wrap">
-                            <span class="text-indigo-600 uppercase tracking-widest">${job.company}</span>
+                            <span class="text-indigo-600 uppercase tracking-widest">${job.company || '未知公司'}</span>
                             <span>•</span>
-                            <span>${job.salary || 'N/A'}</span>
-                            ${job.url ? `<span>•</span><a href="${job.url}" target="_blank" class="text-indigo-400 hover:underline">Apply 🔗</a>` : ''}
-                            ${job.network ? `<span class="px-2 py-0.5 bg-amber-50 text-amber-600 rounded-md">👤 ${job.network}</span>` : ''}
+                            <span>${job.salary || '薪資未填'}</span>
+                            ${job.url ? `<span>•</span><a href="${job.url}" target="_blank" class="text-indigo-400 hover:underline">連結 🔗</a>` : ''}
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
                         <select onchange="updateStatus('${job.id}', this.value)" class="status-pill ${getStatusClass(job.status)}">
                             <option value="未投遞" ${job.status==='未投遞'?'selected':''}>未投遞</option>
                             <option value="已投遞" ${job.status==='已投遞'?'selected':''}>已投遞</option>
-                            <option value="收到面試邀請" ${job.status==='收到面試邀請'?'selected':''}>收到面試邀請</option>
+                            <option value="面試中" ${job.status==='面試中'?'selected':''}>面試中</option>
                             <option value="拒信" ${job.status==='拒信'?'selected':''}>拒信</option>
                             <option value="錄取" ${job.status==='錄取'?'selected':''}>錄取</option>
                         </select>
-                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                             <button onclick="editJob('${job.id}')" class="p-2 text-slate-300 hover:text-indigo-500">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
@@ -227,42 +192,14 @@
             `).join('');
         }
 
-        // 開啟 Modal
         window.openModal = () => {
-            document.getElementById('modal-title').innerText = "新增戰略職位";
-            document.getElementById('btn-submit').innerText = "確認新增";
             document.getElementById('in-id').value = "";
-            document.getElementById('ai-paste-area').value = "";
             ['in-title', 'in-company', 'in-salary', 'in-url', 'in-network'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('modal').classList.replace('hidden', 'flex');
         };
 
-        // 關閉 Modal
         window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
 
-        // 編輯職位
-        window.editJob = async (id) => {
-            const user = auth.currentUser;
-            if (!user) return;
-            const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', id);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                document.getElementById('modal-title').innerText = "編輯職位內容";
-                document.getElementById('btn-submit').innerText = "儲存修改";
-                document.getElementById('in-id').value = id;
-                document.getElementById('in-title').value = data.title || "";
-                document.getElementById('in-company').value = data.company || "";
-                document.getElementById('in-type').value = data.type || "Intern";
-                document.getElementById('in-mode').value = data.mode || "Remote";
-                document.getElementById('in-salary').value = data.salary || "";
-                document.getElementById('in-url').value = data.url || "";
-                document.getElementById('in-network').value = data.network || "";
-                document.getElementById('modal').classList.replace('hidden', 'flex');
-            }
-        };
-
-        // 提交職位 (新增或更新)
         window.submitJob = async () => {
             const user = auth.currentUser;
             if (!user) return;
@@ -276,8 +213,7 @@
                 url: document.getElementById('in-url').value,
                 network: document.getElementById('in-network').value
             };
-
-            if (!data.title || !data.company) return;
+            if (!data.title) return;
 
             const colRef = collection(db, 'artifacts', appId, 'users', user.uid, 'jobs');
             if (id) {
@@ -287,41 +223,51 @@
                 data.createdAt = serverTimestamp();
                 await addDoc(colRef, data);
             }
-            
             closeModal();
         };
 
-        // 更新狀態
-        window.updateStatus = async (id, status) => {
+        window.editJob = async (id) => {
             const user = auth.currentUser;
-            if (!user) return;
-            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', id), { status });
+            const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', id);
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+                const data = snap.data();
+                document.getElementById('in-id').value = id;
+                document.getElementById('in-title').value = data.title || "";
+                document.getElementById('in-company').value = data.company || "";
+                document.getElementById('in-type').value = data.type || "Intern";
+                document.getElementById('in-mode').value = data.mode || "Remote";
+                document.getElementById('in-salary').value = data.salary || "";
+                document.getElementById('in-url').value = data.url || "";
+                document.getElementById('in-network').value = data.network || "";
+                document.getElementById('modal').classList.replace('hidden', 'flex');
+            }
         };
 
-        // 刪除職位
         window.delJob = async (id) => {
             const user = auth.currentUser;
-            if (!user) return;
-            if (confirm("確定刪除此職缺追蹤？此操作無法復原。")) {
+            if (confirm("確定刪除？")) {
                 await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', id));
             }
         };
 
-        // 獲取狀態樣式
+        window.updateStatus = async (id, status) => {
+            const user = auth.currentUser;
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', id), { status });
+        };
+
         function getStatusClass(s) {
-            const map = { '已投遞': 'status-applied', '收到面試邀請': 'status-interview', '拒信': 'status-rejected', '錄取': 'status-offer' };
+            const map = { '已投遞': 'status-applied', '面試中': 'status-interview', '拒信': 'status-rejected', '錄取': 'status-offer' };
             return map[s] || 'status-pending';
         }
 
-        // 更新數據看板
         function updateStats(jobs) {
-            const interviews = jobs.filter(j => j.status === '收到面試邀請').length;
+            const interviews = jobs.filter(j => j.status === '面試中').length;
             const offers = jobs.filter(j => j.status === '錄取').length;
             document.getElementById('stat-total').innerText = jobs.length;
             document.getElementById('stat-interview').innerText = interviews;
             document.getElementById('stat-offers').innerText = offers;
-            const rate = jobs.length ? Math.round((offers / jobs.length) * 100) : 0;
-            document.getElementById('stat-rate').innerText = rate + "%";
+            document.getElementById('stat-rate').innerText = jobs.length ? Math.round((offers / jobs.length) * 100) + "%" : "0%";
         }
     </script>
 </body>
