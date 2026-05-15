@@ -17,7 +17,7 @@
         const db = getFirestore(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'chloe-career-v3';
 
-        // 將所有 Firebase 方法掛載到 window，解決 ReferenceError
+        // 將 Firebase 方法掛載到 window，解決作用域問題
         window.db = db;
         window.appId = appId;
         window.auth = auth;
@@ -40,7 +40,6 @@
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 window.currentUser = user;
-                // 確保登入後執行
                 window.loadJobs();
             }
         });
@@ -49,13 +48,18 @@
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
         .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(226, 232, 240, 1); }
         .ai-gradient { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); }
         .input-field { width: 100%; padding: 12px 16px; background-color: #fcfdfe; border-radius: 12px; font-size: 14px; border: 1px solid #e2e8f0; outline: none; transition: all 0.2s; }
         .input-field:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
         .loader { border-top-color: #6366f1; animation: spinner 1.5s linear infinite; }
         @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* 自定義捲軸 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
 <body class="min-h-screen pb-12">
@@ -66,8 +70,11 @@
                 <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Career <span class="text-indigo-600">IntelliHub</span></h1>
                 <p class="text-slate-500 text-sm">Chloe 的 AI 戰略追蹤器 (Flagship Edition)</p>
             </div>
-            <div class="flex gap-2 w-full md:w-auto">
-                <button onclick="toggleAIPanel()" class="flex-1 md:flex-none bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2">
+            <div class="flex items-center gap-3 w-full md:w-auto">
+                <button onclick="openSettings()" class="p-3 bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 rounded-2xl transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+                <button onclick="toggleAIPanel()" class="flex-1 md:flex-none bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm">
                     ✨ AI 分析 JD
                 </button>
                 <button onclick="openModal()" class="flex-1 md:flex-none ai-gradient text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-lg hover:opacity-90 transition-all">
@@ -83,7 +90,7 @@
         <div id="ai-panel" class="hidden mb-8 glass-card p-8 rounded-[2.5rem] shadow-xl border-2 border-indigo-50">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div class="space-y-4">
-                    <h3 class="font-bold text-slate-800 flex items-center gap-2">🤖 JD 深度評估</h3>
+                    <h3 class="font-bold text-slate-800 flex items-center gap-2 text-lg">🤖 JD 深度評估</h3>
                     <textarea id="jd-input" rows="7" class="input-field" placeholder="在此貼上 Job Description (JD)..."></textarea>
                     <button onclick="analyzeJD()" id="analyze-btn" class="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-transform active:scale-95">
                         <span>啟動分析</span>
@@ -91,16 +98,22 @@
                     </button>
                 </div>
                 <div id="ai-result" class="bg-indigo-50/30 p-6 rounded-2xl border border-dashed border-indigo-100 flex flex-col justify-center min-h-[250px]">
-                    <p class="text-slate-400 text-center italic text-sm">分析後，若分數 > 6 會自動生成列點資訊。此階段不儲存 API Key，每次重新登入皆需重新驗證環境。</p>
+                    <div class="text-center space-y-3">
+                        <p class="text-slate-400 italic text-sm">點擊「啟動分析」後，Gemini 將針對您的經歷進行配對。</p>
+                        <p class="text-[10px] text-slate-300 uppercase tracking-widest">分析後若適配度 > 6 會自動提取職位細節</p>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Job List -->
         <div class="glass-card rounded-[2.5rem] shadow-sm overflow-hidden">
-            <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+            <div class="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h2 class="font-bold text-slate-800 text-lg">應徵進度</h2>
-                <input type="text" id="search-input" oninput="renderJobs()" placeholder="搜尋公司或職稱..." class="text-xs border rounded-full px-4 py-2 outline-none focus:border-indigo-400">
+                <div class="relative w-full sm:w-64">
+                    <input type="text" id="search-input" oninput="renderJobs()" placeholder="搜尋公司或職稱..." class="w-full text-xs border rounded-full px-4 py-3 outline-none focus:border-indigo-400 pl-10">
+                    <span class="absolute left-4 top-3.5 text-slate-300">🔍</span>
+                </div>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -120,7 +133,7 @@
         </div>
     </div>
 
-    <!-- Job Modal -->
+    <!-- Job Modal (新增/編輯職位) -->
     <div id="modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
         <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
             <div class="flex justify-between items-center mb-6">
@@ -151,14 +164,14 @@
                     </div>
                 </div>
                 <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">職缺 URL</label><input id="in-job-url" class="input-field" placeholder="https://..."></div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Network 資訊 (人脈/推薦人)</label><input id="in-network" class="input-field" placeholder="可填入 LinkedIn URL 或人名建議"></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Network 資訊</label><input id="in-network" class="input-field" placeholder="LinkedIn URL 或推薦人姓名"></div>
                 <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">備註 / 分析建議</label><textarea id="in-notes" rows="3" class="input-field"></textarea></div>
             </div>
 
             <div class="bg-indigo-50/50 p-6 rounded-3xl border-2 border-dashed border-indigo-100 mb-8">
                 <h3 class="text-xs font-bold text-indigo-600 uppercase mb-3 flex items-center gap-2">✨ AI 資訊掃描自動填寫</h3>
-                <textarea id="ai-scan-box" rows="3" class="input-field bg-white border-indigo-100" placeholder="將 Gemini 生成的列點文字貼在此..."></textarea>
-                <button onclick="scanAIContent()" class="mt-2 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 underline">立即掃描並同步至上方欄位</button>
+                <textarea id="ai-scan-box" rows="3" class="input-field bg-white border-indigo-100" placeholder="貼上 Gemini 生成的列點內容..."></textarea>
+                <button onclick="scanAIContent()" class="mt-2 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 underline">立即同步至上方欄位</button>
             </div>
 
             <div class="flex gap-4">
@@ -169,17 +182,39 @@
         </div>
     </div>
 
-    <script>
-        // 外部腳本訪問區域
-        let allJobs = [];
+    <!-- Settings Modal (API Key 設定) -->
+    <div id="settings-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-[60] p-4">
+        <div class="bg-white rounded-[2rem] p-8 w-full max-w-md shadow-2xl">
+            <h2 class="text-xl font-extrabold text-slate-800 mb-2">設定中心</h2>
+            <p class="text-xs text-slate-400 mb-6 font-medium uppercase tracking-wider">配置環境與 API 存取權限</p>
+            
+            <div class="space-y-4 mb-8">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Gemini API Key</label>
+                    <div class="relative">
+                        <input id="api-key-input" type="password" class="input-field pr-12" placeholder="在此輸入您的 API Key">
+                        <button onclick="toggleKeyVisibility()" class="absolute right-4 top-3 text-slate-300 hover:text-slate-500">👁️</button>
+                    </div>
+                    <p class="text-[9px] text-slate-400 mt-2 italic leading-relaxed">為了資料安全，此 Key 僅存放在當前瀏覽器的記憶體中。關閉分頁或重新整理後需重新輸入。</p>
+                </div>
+            </div>
+            
+            <button onclick="saveSettings()" class="w-full ai-gradient text-white py-4 rounded-xl font-bold shadow-lg transition-all hover:opacity-90">確認保存</button>
+            <button onclick="closeSettings()" class="w-full mt-2 text-slate-400 py-2 text-xs font-bold hover:text-slate-600">取消</button>
+        </div>
+    </div>
 
+    <script>
+        // 全域狀態
+        let allJobs = [];
+        let currentApiKey = ""; // 僅存於當前 session 記憶體
+
+        // --- 初始化與 Firestore 監聽 ---
         window.loadJobs = () => {
             const { db, appId, currentUser, firestoreTools } = window;
             if (!currentUser || !firestoreTools) return;
 
-            // 從 firestoreTools 獲取解構函數，解決 ReferenceError
             const { query, collection, orderBy, onSnapshot } = firestoreTools;
-            
             const q = query(
                 collection(db, 'artifacts', appId, 'users', currentUser.uid, 'jobs'),
                 orderBy('updatedAt', 'desc')
@@ -194,12 +229,13 @@
             });
         };
 
+        // --- UI 渲染邏輯 ---
         window.renderJobs = () => {
             const table = document.getElementById('job-table-body');
             const term = document.getElementById('search-input').value.toLowerCase();
             const filtered = allJobs.filter(j => (j.company + j.title).toLowerCase().includes(term));
 
-            table.innerHTML = filtered.map(j => `
+            table.innerHTML = filtered.length ? filtered.map(j => `
                 <tr class="hover:bg-slate-50 transition-colors">
                     <td class="px-6 py-5">
                         <div class="font-bold text-slate-800">${j.title}</div>
@@ -209,26 +245,28 @@
                         <div class="text-slate-600 font-medium">${j.category || 'N/A'}</div>
                         <div class="text-[10px] text-slate-400 uppercase font-bold">${j.type || ''}</div>
                     </td>
-                    <td class="px-6 py-5 text-slate-500">${j.salary || '-'}</td>
+                    <td class="px-6 py-5 text-slate-500 font-medium">${j.salary || '-'}</td>
                     <td class="px-6 py-5">
                         <span class="px-3 py-1 rounded-full text-[10px] font-black ${getStatusClass(j.status)}">${j.status}</span>
                     </td>
                     <td class="px-6 py-5 text-center">
-                        <span class="font-black ${j.score >= 8 ? 'text-green-600' : (j.score >= 6 ? 'text-amber-500' : 'text-slate-300')}">${j.score || '0.0'}</span>
+                        <span class="font-black ${j.score >= 8 ? 'text-green-600' : (j.score >= 6 ? 'text-amber-500' : 'text-slate-300')}">${(j.score || 0).toFixed(1)}</span>
                     </td>
                     <td class="px-6 py-5 text-right">
-                        <button onclick="openEdit('${j.id}')" class="text-indigo-400 hover:text-indigo-600 font-bold text-xs">修改</button>
+                        <button onclick="openEdit('${j.id}')" class="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-600 hover:text-white transition-all font-bold text-xs">修改</button>
                     </td>
                 </tr>
-            `).join('');
+            `).join('') : `<tr><td colspan="6" class="p-12 text-center text-slate-300 italic text-sm">尚未有應徵資料，點擊「新增職位」開始追蹤。</td></tr>`;
         };
 
         function getStatusClass(s) {
-            if (s === '已投遞') return 'bg-green-50 text-green-600';
-            if (s === '面試中') return 'bg-amber-50 text-amber-600';
-            if (s === '拒信') return 'bg-red-50 text-red-600';
-            if (s === '錄取') return 'bg-indigo-50 text-indigo-600';
-            return 'bg-slate-100 text-slate-400';
+            const map = {
+                '已投遞': 'bg-green-50 text-green-600',
+                '面試中': 'bg-amber-50 text-amber-600',
+                '拒信': 'bg-red-50 text-red-600',
+                '錄取': 'bg-indigo-50 text-indigo-600'
+            };
+            return map[s] || 'bg-slate-100 text-slate-400';
         }
 
         function updateStats() {
@@ -241,14 +279,37 @@
             const container = document.getElementById('stats-container');
             if (container) {
                 container.innerHTML = stats.map(s => `
-                    <div class="glass-card p-5 rounded-3xl shadow-sm">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">${s.label}</p>
+                    <div class="glass-card p-5 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-tighter">${s.label}</p>
                         <div class="text-2xl font-black ${s.color}">${s.val}</div>
                     </div>
                 `).join('');
             }
         }
 
+        // --- 設定中心控制 ---
+        window.openSettings = () => {
+            document.getElementById('api-key-input').value = currentApiKey;
+            document.getElementById('settings-modal').classList.replace('hidden', 'flex');
+        };
+        window.closeSettings = () => document.getElementById('settings-modal').classList.replace('flex', 'hidden');
+        window.saveSettings = () => {
+            currentApiKey = document.getElementById('api-key-input').value.trim();
+            closeSettings();
+            // 如果 AI 面板內有錯誤訊息，重置它
+            if (currentApiKey) {
+                document.getElementById('ai-result').innerHTML = `
+                    <div class="text-center space-y-3">
+                        <p class="text-indigo-500 italic text-sm">✅ API Key 已就緒！請在左側輸入 JD 並點擊分析。</p>
+                    </div>`;
+            }
+        };
+        window.toggleKeyVisibility = () => {
+            const input = document.getElementById('api-key-input');
+            input.type = input.type === "password" ? "text" : "password";
+        };
+
+        // --- 職位操作邏輯 ---
         window.openModal = () => {
             document.getElementById('in-id').value = "";
             document.getElementById('modal-title').innerText = "新增應徵紀錄";
@@ -302,7 +363,7 @@
                     await firestoreTools.addDoc(firestoreTools.collection(db, 'artifacts', appId, 'users', currentUser.uid, 'jobs'), { ...data, createdAt: firestoreTools.serverTimestamp() });
                 }
                 closeModal();
-            } catch (e) { alert("儲存失敗，請檢查權限設定。"); }
+            } catch (e) { alert("儲存失敗。"); }
         };
 
         window.deleteJob = async () => {
@@ -316,17 +377,23 @@
         window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
         window.toggleAIPanel = () => document.getElementById('ai-panel').classList.toggle('hidden');
 
-        // API 保護機制：此處設為空字串，保證不儲存 key 到任何持久化媒介中
-        const apiKey = ""; 
-
+        // --- AI 分析核心邏輯 ---
         async function analyzeJD() {
-            if (!apiKey) {
-                document.getElementById('ai-result').innerHTML = `<div class="p-4 bg-red-50 text-red-500 text-xs rounded-xl border border-red-100">⚠️ 偵測到新裝置/新會話：API Key 未配置。請確認環境權限或重新注入 Key。</div>`;
+            if (!currentApiKey) {
+                document.getElementById('ai-result').innerHTML = `
+                    <div class="p-5 bg-amber-50 border border-amber-100 rounded-2xl">
+                        <p class="text-amber-700 text-xs font-bold mb-2 flex items-center gap-2">⚠️ 需要 API KEY</p>
+                        <p class="text-slate-500 text-[10px] mb-3">為了安全，分析功能需要您手動輸入 Gemini API Key。</p>
+                        <button onclick="openSettings()" class="w-full bg-amber-500 text-white py-2 rounded-lg text-[10px] font-bold">前往設定輸入 Key</button>
+                    </div>`;
                 return;
             }
 
             const jd = document.getElementById('jd-input').value;
-            if (!jd) return;
+            if (!jd) {
+                alert("請輸入 Job Description。");
+                return;
+            }
             const btn = document.getElementById('analyze-btn');
             const loader = document.getElementById('ai-loader');
             const resArea = document.getElementById('ai-result');
@@ -349,38 +416,35 @@
                職缺URL: [網址]
                Network建議: [建議]
                理由: [理由]
-               建議: [重點]
-            3. 若分數 <= 6，簡述原因。`;
-
-            const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
-                try {
-                    const res = await fetch(url, options);
-                    if (!res.ok) throw new Error("API Error");
-                    return await res.json();
-                } catch (e) {
-                    if (retries > 0) {
-                        await new Promise(r => setTimeout(r, backoff));
-                        return fetchWithRetry(url, options, retries - 1, backoff * 2);
-                    }
-                    throw e;
-                }
-            };
+               建議: [重點建議]
+            3. 若分數 <= 6，簡述適配度較低的原因。`;
 
             try {
-                const data = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${currentApiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
                 });
                 
-                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "無法生成分析";
+                if (!res.ok) throw new Error("Key 可能失效");
+                
+                const data = await res.json();
+                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "無法生成分析內容";
+                
                 resArea.innerHTML = `
-                    <div class="text-left text-xs bg-white p-4 rounded-xl border border-indigo-100 overflow-y-auto max-h-[300px]">
-                        <pre class="whitespace-pre-wrap font-sans text-slate-700">${aiText}</pre>
-                        <button onclick="copyToScanner('${aiText.replace(/'/g, "").replace(/\n/g, "\\n")}')" class="w-full mt-4 py-3 ai-gradient text-white rounded-xl font-bold">同步至新增職位</button>
+                    <div class="text-left text-xs bg-white p-4 rounded-xl border border-indigo-100 overflow-y-auto max-h-[350px]">
+                        <div class="prose prose-sm prose-slate max-w-none">
+                            <pre class="whitespace-pre-wrap font-sans text-slate-700 leading-relaxed">${aiText}</pre>
+                        </div>
+                        <button onclick="copyToScanner('${aiText.replace(/'/g, "").replace(/\n/g, "\\n")}')" class="w-full mt-4 py-3 ai-gradient text-white rounded-xl font-bold hover:scale-[1.02] transition-transform">同步資訊並新增職位</button>
                     </div>`;
             } catch (e) { 
-                resArea.innerHTML = `<p class="text-red-500 text-center text-xs">分析失敗，請檢查網路連線或 API Key 是否正確。</p>`;
+                resArea.innerHTML = `
+                    <div class="p-5 bg-red-50 border border-red-100 rounded-2xl text-center">
+                        <p class="text-red-500 text-xs font-bold">❌ 分析失敗</p>
+                        <p class="text-slate-400 text-[9px] mt-1 italic">API Key 錯誤或連線異常。請至設定確認 Key 是否正確。</p>
+                        <button onclick="openSettings()" class="mt-3 text-[10px] text-red-400 underline font-bold">重新配置 Key</button>
+                    </div>`;
             } finally { 
                 btn.disabled = false; loader.classList.add('hidden'); 
             }
@@ -414,7 +478,7 @@
             if(reason || suggest) {
                 const noteEl = document.getElementById('in-notes');
                 if (noteEl) {
-                    noteEl.value = `${reason?.[1]?.replace(/\*\*/g, '') || ""}\n\n${suggest?.[1]?.replace(/\*\*/g, '') || ""}`;
+                    noteEl.value = `【分析理由】\n${reason?.[1]?.replace(/\*\*/g, '') || "N/A"}\n\n【專家建議】\n${suggest?.[1]?.replace(/\*\*/g, '') || "N/A"}`;
                 }
             }
         };
