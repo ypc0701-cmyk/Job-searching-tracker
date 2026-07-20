@@ -48,6 +48,45 @@ async function callGemini(apiKey, body, onStatus) {
     throw lastErr;
 }
 
+// 在職缺頁面上執行：展開收合的 JD（點 See more）並捲動到描述區塊，觸發延遲載入
+function expandJD() {
+    const desc = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content');
+    if (desc) desc.scrollIntoView({ block: 'center' });
+    [...document.querySelectorAll('button')]
+        .filter(b => /see more|show more|顯示更多|\.{3}\s*more|…\s*more/i.test(b.innerText))
+        .forEach(b => b.click());
+}
+
+// 等待分頁載入完成
+function waitForTabComplete(tabId, timeoutMs = 15000) {
+    return new Promise(resolve => {
+        const timer = setTimeout(() => { cleanup(); resolve(); }, timeoutMs);
+        const listener = (id, info) => {
+            if (id === tabId && info.status === 'complete') { cleanup(); resolve(); }
+        };
+        const cleanup = () => { clearTimeout(timer); chrome.tabs.onUpdated.removeListener(listener); };
+        chrome.tabs.onUpdated.addListener(listener);
+    });
+}
+
+// 重試抓取：LinkedIn 內容為延遲載入，最多嘗試 6 次、每次間隔 1.2 秒
+async function extractWithRetry(tabId, onStatus) {
+    for (let i = 0; i < 6; i++) {
+        try {
+            await chrome.scripting.executeScript({ target: { tabId }, func: expandJD });
+            const [{ result: job }] = await chrome.scripting.executeScript({ target: { tabId }, func: extractJobInfo });
+            if (job?.jd && job.jd.length >= 100) return job;
+        } catch (e) {
+            if (/cannot access|host permission/i.test(e.message)) {
+                throw new Error('沒有這個網站的存取權限。網址輸入目前僅支援 LinkedIn 與 Handshake');
+            }
+        }
+        onStatus(`等待職缺內容載入中...（${i + 1}/6）`);
+        await new Promise(r => setTimeout(r, 1200));
+    }
+    return null;
+}
+
 // 在職缺頁面上執行：抓取標題、公司、JD 全文、Easy Apply 與否
 function extractJobInfo() {
     const isLinkedIn = location.hostname.includes('linkedin.com');
@@ -84,14 +123,27 @@ btn.addEventListener('click', async () => {
     }
 
     btn.disabled = true;
+    let createdTabId = null;
     try {
+        const inputUrl = document.getElementById('job-url').value.trim();
+        let tabId;
+        if (inputUrl) {
+            if (!/^https:\/\/([\w-]+\.)*(linkedin\.com|joinhandshake\.com)\//.test(inputUrl)) {
+                throw new Error('網址輸入目前僅支援 LinkedIn 與 Handshake 的職缺頁面');
+            }
+            setStatus('背景開啟職缺頁面中...');
+            const newTab = await chrome.tabs.create({ url: inputUrl, active: false });
+            createdTabId = newTab.id;
+            tabId = newTab.id;
+            await waitForTabComplete(tabId);
+        } else {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            tabId = tab.id;
+        }
+
         setStatus('抓取職缺內容中...');
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const [{ result: job }] = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: extractJobInfo
-        });
-        if (!job.jd || job.jd.length < 100) throw new Error('抓不到 JD 內容，請確認職缺描述已展開（點過 See more）');
+        const job = await extractWithRetry(tabId, setStatus);
+        if (!job) throw new Error('抓不到 JD 內容。請確認這是職缺頁面（貼網址或直接開啟職缺頁），且網路可正常載入');
 
         setStatus(`已抓取：${job.title}\nGemini 分析中...`);
 
@@ -104,7 +156,7 @@ btn.addEventListener('click', async () => {
 類別: [Intern/Full-time]
 工作型態: [On-site/Remote/Hybrid]
 薪資: [範圍，未提供則寫 未提供]
-建議履歷: [從這五個中選一個最適合的：${RESUME_TAGS.join('、')}]
+建議履歷: [從這些選項中選一個最適合的：${RESUME_TAGS.join('、')}]
 理由: [兩句話總結適配點]
 建議: [對策]`;
 
@@ -142,6 +194,7 @@ btn.addEventListener('click', async () => {
     } catch (e) {
         setStatus(`錯誤：${e.message}`, true);
     } finally {
+        if (createdTabId) chrome.tabs.remove(createdTabId).catch(() => {});
         btn.disabled = false;
     }
 });
