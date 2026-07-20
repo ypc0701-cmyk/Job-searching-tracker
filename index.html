@@ -100,10 +100,30 @@
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">適配分數 (0-10)</label>
                     <input id="in-score" type="number" step="0.1" class="input-field" placeholder="例如: 8.5">
                 </div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">建議履歷版本</label>
+                    <select id="in-resume-tag" class="input-field cursor-pointer">
+                        <option value="">-- 未指定 --</option>
+                        <option value="Business Intelligence">Business Intelligence</option>
+                        <option value="Communication">Communication</option>
+                        <option value="Data Analytics">Data Analytics</option>
+                        <option value="Marketing Analytics">Marketing Analytics</option>
+                        <option value="Product Manager">Product Manager</option>
+                        <option value="Supply Chain">Supply Chain</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2 pt-6">
+                    <input type="checkbox" id="in-easy-apply" class="w-4 h-4 rounded accent-indigo-500 cursor-pointer">
+                    <label for="in-easy-apply" class="text-xs font-bold text-slate-500 cursor-pointer">LinkedIn Easy Apply 職缺</label>
+                </div>
                 <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">薪資範圍</label><input id="in-salary" class="input-field"></div>
                 <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">職缺 URL</label><input id="in-job-url" class="input-field"></div>
                 <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Network 備註</label><input id="in-network" class="input-field"></div>
                 <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">分析筆記</label><textarea id="in-notes" rows="3" class="input-field"></textarea></div>
+            </div>
+
+            <div id="attachments-section" class="hidden bg-slate-50 p-5 rounded-2xl mb-6 border border-slate-100">
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-3">客製化文件</p>
+                <div id="attachments-list" class="flex flex-col gap-2"></div>
             </div>
 
             <div class="bg-indigo-50/50 p-5 rounded-2xl mb-6 border border-indigo-100/50">
@@ -111,6 +131,9 @@
                 <textarea id="ai-scan-box" rows="2" class="input-field text-xs bg-white/80" placeholder="貼上內容後點擊同步..."></textarea>
                 <button onclick="scanAIContent()" class="mt-2 text-[10px] font-black text-indigo-500 hover:text-indigo-700 transition-colors uppercase tracking-wider">➔ 解析並填寫</button>
             </div>
+
+            <div id="apply-reminder" class="hidden text-xs font-bold text-indigo-500 bg-indigo-50 px-4 py-3 rounded-xl mb-4">💡 建議使用履歷：<span id="apply-resume-tag"></span></div>
+            <button id="btn-apply" onclick="applyJob()" class="hidden w-full mb-4 bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors">🚀 前往應徵頁面 (Apply)</button>
 
             <div class="flex gap-4">
                 <button id="btn-delete" onclick="deleteJob()" class="hidden px-6 font-bold text-red-400 text-sm hover:text-red-600 transition-colors">刪除紀錄</button>
@@ -136,7 +159,16 @@
             "appId": "1:41615562183:web:654666dd152ed7455775e2"
         };
 
+        let pendingImport = null;
+
         window.onload = () => {
+            const m = location.hash.match(/^#import=(.+)$/);
+            if (m) {
+                try {
+                    pendingImport = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+                } catch (e) { console.error('匯入資料解析失敗', e); }
+                history.replaceState(null, '', location.pathname + location.search);
+            }
             const savedConfig = localStorage.getItem('chloe_fb_config') || (typeof __firebase_config !== 'undefined' ? __firebase_config : null) || DEFAULT_FIREBASE_CONFIG;
             startApp(typeof savedConfig === 'string' ? JSON.parse(savedConfig) : savedConfig);
         };
@@ -179,6 +211,7 @@
                         onSnapshot(query(jobsCol, orderBy('updatedAt', 'desc')), (snap) => {
                             allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                             render();
+                            runPendingImport();
                         }, (err) => console.error(err));
                     }
                 });
@@ -325,6 +358,8 @@
                 jobUrl: document.getElementById('in-job-url').value,
                 network: document.getElementById('in-network').value,
                 notes: document.getElementById('in-notes').value,
+                resumeTag: document.getElementById('in-resume-tag').value,
+                easyApply: document.getElementById('in-easy-apply').checked,
                 updatedAt: serverTimestamp()
             };
             try {
@@ -401,7 +436,11 @@
             document.getElementById('modal-title').innerText = "新增應徵紀錄";
             document.querySelectorAll('#modal input, #modal textarea').forEach(i => i.value = "");
             document.getElementById('in-status').value = "未投遞";
+            document.getElementById('in-resume-tag').value = "";
+            document.getElementById('in-easy-apply').checked = false;
             document.getElementById('btn-delete').classList.add('hidden');
+            renderAttachments(null);
+            updateApplyUI(null);
             document.getElementById('modal').classList.replace('hidden', 'flex');
         };
 
@@ -420,18 +459,105 @@
             document.getElementById('in-job-url').value = j.jobUrl || "";
             document.getElementById('in-network').value = j.network || "";
             document.getElementById('in-notes').value = j.notes || "";
+            document.getElementById('in-resume-tag').value = j.resumeTag || "";
+            document.getElementById('in-easy-apply').checked = !!j.easyApply;
             document.getElementById('btn-delete').classList.remove('hidden');
+            renderAttachments(j);
+            updateApplyUI(j);
             document.getElementById('modal').classList.replace('hidden', 'flex');
         };
 
-        window.deleteJob = async () => { 
-            if (!currentUser) return;
-            if(confirm("確定刪除？")) { 
-                await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs', document.getElementById('in-id').value)); 
-                closeModal(); 
-            } 
+        function renderAttachments(job) {
+            const section = document.getElementById('attachments-section');
+            const list = document.getElementById('attachments-list');
+            const files = [];
+            if (job?.resumeFile?.dataUrl) files.push(job.resumeFile);
+            if (job?.coverLetterFile?.dataUrl) files.push(job.coverLetterFile);
+
+            if (files.length === 0) {
+                section.classList.add('hidden');
+                list.innerHTML = "";
+                return;
+            }
+            section.classList.remove('hidden');
+            list.innerHTML = files.map((f, i) => `
+                <button onclick="downloadAttachment(${i})" class="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:border-indigo-300 transition-colors text-left">
+                    <span>📄 ${f.name}</span>
+                    <span class="text-indigo-500">下載</span>
+                </button>`).join('');
+            window._currentAttachments = files;
+        }
+
+        window.downloadAttachment = (i) => {
+            const f = window._currentAttachments?.[i];
+            if (!f) return;
+            const a = document.createElement('a');
+            a.href = f.dataUrl;
+            a.download = f.name;
+            a.click();
         };
-        
+
+        function updateApplyUI(job) {
+            const btn = document.getElementById('btn-apply');
+            const reminder = document.getElementById('apply-reminder');
+            if (job?.jobUrl) {
+                btn.classList.remove('hidden');
+            } else {
+                btn.classList.add('hidden');
+            }
+            if (job?.resumeTag) {
+                document.getElementById('apply-resume-tag').innerText = job.resumeTag;
+                reminder.classList.remove('hidden');
+            } else {
+                reminder.classList.add('hidden');
+            }
+        }
+
+        window.applyJob = () => {
+            const url = document.getElementById('in-job-url').value;
+            if (!url) return;
+            window.open(url, '_blank');
+            if (confirm("是否標記為已投遞？")) {
+                document.getElementById('in-status').value = "已投遞";
+                saveJob();
+            }
+        };
+
+        async function runPendingImport() {
+            if (!pendingImport || !currentUser) return;
+            const p = pendingImport;
+            pendingImport = null;
+            const isDup = allJobs.some(j => j.jobUrl && p.jobUrl && j.jobUrl === p.jobUrl);
+            if (isDup && !confirm("這個職缺網址已存在於清單中，仍要重複匯入嗎？")) return;
+            const data = {
+                title: p.title || "", company: p.company || "", category: p.category || "",
+                type: p.type || "", status: "未投遞", score: parseFloat(p.score) || 0,
+                salary: p.salary || "", jobUrl: p.jobUrl || "", network: "",
+                notes: p.notes || "", resumeTag: p.resumeTag || "", easyApply: !!p.easyApply,
+                createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+            };
+            try {
+                await addDoc(collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs'), data);
+            } catch (e) { console.error('匯入失敗', e); alert('匯入失敗：' + e.message); }
+        }
+
+        window.attachDocuments = async (jobId, resumeFile, coverLetterFile) => {
+            if (!currentUser) return;
+            const data = {};
+            if (resumeFile) data.resumeFile = resumeFile;
+            if (coverLetterFile) data.coverLetterFile = coverLetterFile;
+            if (Object.keys(data).length === 0) return;
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs', jobId), data);
+        };
+
+        window.deleteJob = async () => {
+            if (!currentUser) return;
+            if(confirm("確定刪除？")) {
+                await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs', document.getElementById('in-id').value));
+                closeModal();
+            }
+        };
+
         window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
         window.toggleAIPanel = () => document.getElementById('ai-panel').classList.toggle('hidden');
     </script>
