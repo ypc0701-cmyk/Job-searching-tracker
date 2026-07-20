@@ -88,30 +88,40 @@ async function extractWithRetry(tabId, onStatus) {
 }
 
 // 在職缺頁面上執行：抓取標題、公司、JD 全文、Easy Apply 與否
+// 注意：LinkedIn 已改用隨機雜湊 class 名稱，不能依賴 class 選擇器。
+// 職稱/公司改從 document.title 解析（格式固定「職稱 | 公司 | LinkedIn」），
+// JD 改用「包含 About the job 的最內層文字區塊」啟發式定位。
 function extractJobInfo() {
     const isLinkedIn = location.hostname.includes('linkedin.com');
-    const title = document.querySelector('h1')?.innerText?.trim() || document.title;
-    let company = "";
-    let jd = "";
-    let easyApply = false;
+    let title = "", company = "", jd = "", easyApply = false, closed = false;
 
     if (isLinkedIn) {
-        company = document.querySelector('.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name')?.innerText?.trim() || "";
-        jd = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content')?.innerText?.trim() || "";
+        const parts = document.title.replace(/^\(\d+\)\s*/, '').split('|').map(s => s.trim());
+        if (parts.length >= 3) { title = parts[0]; company = parts[1]; }
+        closed = /no longer accepting applications/i.test(document.body.innerText);
         easyApply = [...document.querySelectorAll('button')].some(b => /easy apply|快速應徵/i.test(b.innerText));
-    }
 
-    // 通用 fallback（Handshake 或其他求職網站）：取頁面主要文字
-    if (!jd) {
+        // JD：先試舊版選擇器（相容舊版 DOM），再用啟發式
+        jd = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content')?.innerText?.trim() || "";
+        if (!jd || jd.length < 100) {
+            const blocks = [...document.querySelectorAll('div,section,article')]
+                .filter(el => (el.innerText || '').length > 300 && /about the job/i.test(el.innerText))
+                .sort((a, b) => a.innerText.length - b.innerText.length);
+            if (blocks.length) {
+                const text = blocks[0].innerText;
+                const start = text.search(/about the job/i);
+                jd = text.slice(start >= 0 ? start : 0);
+            }
+        }
+    } else {
+        title = document.querySelector('h1')?.innerText?.trim() || document.title;
+        company = document.querySelector('[class*="company" i] a, [class*="employer" i]')?.innerText?.trim() || "";
         const body = document.body.innerText;
-        const start = body.search(/about the job|job description|description|responsibilities|職缺描述/i);
+        const start = body.search(/about the job|job description|responsibilities|職缺描述/i);
         jd = start >= 0 ? body.slice(start, start + 8000) : body.slice(0, 8000);
     }
-    if (!company) {
-        company = document.querySelector('[class*="company" i] a, [class*="employer" i]')?.innerText?.trim() || "";
-    }
 
-    return { title, company, jd, easyApply, url: location.href.split('?')[0] };
+    return { title, company, jd, easyApply, closed, url: location.href.split('?')[0] };
 }
 
 btn.addEventListener('click', async () => {
@@ -147,8 +157,19 @@ btn.addEventListener('click', async () => {
 
         setStatus(`已抓取：${job.title}\nGemini 分析中...`);
 
-        const systemPrompt = `妳是 Chloe 的職業顧問。請根據以下 JD 進行適配度分析。
-候選人背景：MSBA 學生（Boston University，2027/1 畢業），具備 Meta Ads 廣告投放與 A/B 測試、市場研究、數據分析、供應鏈管理與創業經驗（DTC 電商品牌創辦人，4 個月 NTD $100K 營收）。
+        // 載入六份履歷的實際內容，讓 Gemini 逐份比對後推薦，而非只看名稱猜測
+        const resumeLib = await fetch(chrome.runtime.getURL('resume-library.json')).then(r => r.json());
+        const resumeSection = Object.entries(resumeLib)
+            .map(([tag, text]) => `═══ 履歷版本「${tag}」═══\n${text.slice(0, 2600)}`)
+            .join('\n\n');
+
+        const systemPrompt = `妳是 Chloe 的職業顧問。請根據 JD 進行適配度分析，並從她的六份履歷版本中推薦最適合這個職缺的一份。
+候選人背景：MSBA 學生（Boston University，2027/1 畢業）。
+
+以下是 Chloe 六份履歷版本的完整內容，請實際比對各版本的經歷描述與 JD 要求的重疊程度來推薦，不要只看版本名稱：
+
+${resumeSection}
+
 請嚴格遵守以下格式輸出，不要加任何其他文字：
 分數: [0-10]
 職稱: [名稱]
@@ -156,7 +177,8 @@ btn.addEventListener('click', async () => {
 類別: [Intern/Full-time]
 工作型態: [On-site/Remote/Hybrid]
 薪資: [範圍，未提供則寫 未提供]
-建議履歷: [從這些選項中選一個最適合的：${RESUME_TAGS.join('、')}]
+建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
+履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
 理由: [兩句話總結適配點]
 建議: [對策]`;
 
@@ -175,8 +197,8 @@ btn.addEventListener('click', async () => {
         const resumeTag = RESUME_TAGS.find(t => resumeTagRaw.includes(t)) || "";
 
         const payload = {
-            title: grab('職稱') || job.title,
-            company: grab('公司') || job.company,
+            title: job.title || grab('職稱'),
+            company: job.company || grab('公司'),
             category: grab('類別'),
             type: grab('工作型態'),
             score: parseFloat((grab('分數').match(/[\d.]+/) || [0])[0]) || 0,
@@ -184,7 +206,7 @@ btn.addEventListener('click', async () => {
             jobUrl: job.url,
             resumeTag,
             easyApply: job.easyApply,
-            notes: `【建議履歷】${resumeTag || resumeTagRaw}\n\n【分析理由】\n${grab('理由')}\n\n【對策建議】\n${grab('建議')}`
+            notes: `${job.closed ? '⚠️【注意】此職缺已停止收件（No longer accepting applications）\n\n' : ''}【建議履歷】${resumeTag || resumeTagRaw}\n${grab('履歷理由')}\n\n【分析理由】\n${grab('理由')}\n\n【對策建議】\n${grab('建議')}`
         };
 
         setStatus('匯入 Career Hub 中...');
