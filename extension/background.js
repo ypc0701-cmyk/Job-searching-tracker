@@ -7,6 +7,11 @@ function notify(title, message) {
     chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title, message: message.slice(0, 300) });
 }
 
+// 執行狀態寫入 storage：popup 重新打開時可看到進度與結果（系統通知可能被 OS 擋掉）
+function setRun(stage, extra = {}) {
+    return chrome.storage.local.set({ lastRun: { time: Date.now(), stage, ...extra } });
+}
+
 async function callGemini(apiKey, body) {
     let lastErr = null;
     for (const model of GEMINI_MODELS) {
@@ -85,6 +90,7 @@ function waitForTabComplete(tabId, timeoutMs = 20000) {
 // 重試抓取：內容為延遲載入，最多 8 次、每次間隔 1.5 秒，每次先捲動/展開
 async function extractWithRetry(tabId) {
     for (let i = 0; i < 8; i++) {
+        await setRun(`抓取職缺內容中（第 ${i + 1}/8 次）...`);
         try {
             await chrome.scripting.executeScript({ target: { tabId }, func: expandJD });
             const [{ result: job }] = await chrome.scripting.executeScript({ target: { tabId }, func: extractJobInfo });
@@ -101,13 +107,18 @@ async function extractWithRetry(tabId) {
 
 async function analyze({ url, tabId }) {
     const { geminiKey } = await chrome.storage.local.get('geminiKey');
-    if (!geminiKey) { notify('Career Hub', '請先在擴充功能視窗儲存 Gemini API Key'); return; }
+    if (!geminiKey) {
+        await setRun('失敗', { ok: false, message: '請先在擴充功能視窗儲存 Gemini API Key' });
+        notify('Career Hub', '請先在擴充功能視窗儲存 Gemini API Key');
+        return;
+    }
 
     let createdTabId = null;
     try {
         let targetTabId = tabId;
         if (url) {
             // 開啟「可見」分頁：LinkedIn 對背景分頁會延遲渲染，內容永遠載不出來
+            await setRun('開啟職缺分頁中...');
             const newTab = await chrome.tabs.create({ url, active: true });
             createdTabId = newTab.id;
             targetTabId = newTab.id;
@@ -116,6 +127,7 @@ async function analyze({ url, tabId }) {
 
         const job = await extractWithRetry(targetTabId);
         if (!job) throw new Error('抓不到 JD 內容。請確認網址是職缺頁面且仍開放中（已關閉的職缺不會顯示描述）');
+        await setRun(`已抓取「${job.title || '未知職稱'}」，Gemini 分析中...`);
 
         const resumeLib = await fetch(chrome.runtime.getURL('resume-library.json')).then(r => r.json());
         const resumeSection = Object.entries(resumeLib)
@@ -169,10 +181,19 @@ ${resumeSection}
 
         if (createdTabId) { await chrome.tabs.remove(createdTabId).catch(() => {}); createdTabId = null; }
 
-        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+        await setRun('匯入 Career Hub 中...');
+        // UTF-8 → base64（service worker 環境不用 unescape）
+        const bytes = new TextEncoder().encode(JSON.stringify(payload));
+        let bin = '';
+        bytes.forEach(b => bin += String.fromCharCode(b));
+        const encoded = btoa(bin);
         await chrome.tabs.create({ url: `${TRACKER_URL}#import=${encoded}` });
-        notify('✓ 已匯入 Career Hub', `${payload.title}｜分數 ${payload.score}｜建議履歷：${resumeTag || '未指定'}`);
+        const doneMsg = `${payload.title}｜分數 ${payload.score}｜建議履歷：${resumeTag || '未指定'}`;
+        await setRun('✓ 完成', { ok: true, message: doneMsg });
+        notify('✓ 已匯入 Career Hub', doneMsg);
     } catch (e) {
+        console.error('analyze failed:', e);
+        await setRun('失敗', { ok: false, message: e.message });
         notify('匯入失敗', e.message);
     } finally {
         if (createdTabId) chrome.tabs.remove(createdTabId).catch(() => {});

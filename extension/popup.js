@@ -11,6 +11,20 @@ chrome.storage.local.get('geminiKey', ({ geminiKey }) => {
     if (!geminiKey) keySection.classList.remove('hidden');
 });
 
+// 顯示最近一次執行狀態（popup 關閉重開也看得到），並在 popup 開啟期間即時更新
+function renderRun(run) {
+    if (!run) return;
+    const ago = Math.round((Date.now() - run.time) / 1000);
+    const when = ago < 90 ? `${ago} 秒前` : `${Math.round(ago / 60)} 分鐘前`;
+    if (run.ok === true) setStatus(`✓ 完成（${when}）\n${run.message}`);
+    else if (run.ok === false) setStatus(`✗ 失敗（${when}）\n${run.message}`, true);
+    else setStatus(`⏳ ${run.stage}（${when}）`);
+}
+chrome.storage.local.get('lastRun', ({ lastRun }) => renderRun(lastRun));
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.lastRun) renderRun(changes.lastRun.newValue);
+});
+
 document.getElementById('save-key').addEventListener('click', () => {
     const key = document.getElementById('gemini-key').value.trim();
     if (!key) return;
