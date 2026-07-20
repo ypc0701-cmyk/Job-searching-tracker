@@ -23,6 +23,31 @@ document.getElementById('save-key').addEventListener('click', () => {
     });
 });
 
+// 呼叫 Gemini：過載時自動重試一次，仍失敗則改用備用模型
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+const isOverloaded = (status, msg) => status === 503 || status === 429 || /high demand|overloaded/i.test(msg || "");
+
+async function callGemini(apiKey, body, onStatus) {
+    let lastErr = null;
+    for (const model of GEMINI_MODELS) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const result = await resp.json();
+            if (resp.ok) return result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            const msg = result?.error?.message || `HTTP ${resp.status}`;
+            if (!isOverloaded(resp.status, msg)) throw new Error(msg);
+            lastErr = new Error(msg);
+            onStatus?.(`${model} 忙碌中，${attempt === 1 ? '2 秒後重試' : '改用備用模型'}...`);
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+    throw lastErr;
+}
+
 // 在職缺頁面上執行：抓取標題、公司、JD 全文、Easy Apply 與否
 function extractJobInfo() {
     const isLinkedIn = location.hostname.includes('linkedin.com');
@@ -83,17 +108,10 @@ btn.addEventListener('click', async () => {
 理由: [兩句話總結適配點]
 建議: [對策]`;
 
-        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: `JD內容:\n${job.jd.slice(0, 12000)}` }] }],
-                systemInstruction: { parts: [{ text: systemPrompt }] }
-            })
-        });
-        const result = await resp.json();
-        if (!resp.ok) throw new Error(result?.error?.message || `HTTP ${resp.status}`);
-        const aiText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const aiText = await callGemini(geminiKey, {
+            contents: [{ parts: [{ text: `JD內容:\n${job.jd.slice(0, 12000)}` }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] }
+        }, setStatus);
         if (!aiText) throw new Error('Gemini 未回傳分析內容');
 
         // 解析 Gemini 回覆
