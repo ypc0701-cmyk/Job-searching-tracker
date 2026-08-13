@@ -35,8 +35,8 @@ async function callGemini(apiKey, body) {
 // 在職缺頁面上執行：逐步捲動觸發延遲載入、展開 See more
 function expandJD() {
     window.scrollBy(0, 500);
-    let desc = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content');
-    if (location.hostname.includes('joinhandshake.com')) {
+    let desc = document.querySelector('[data-testid="expandable-text-box"], #job-details, .jobs-description__content, .jobs-box__html-content');
+    if (location.hostname.includes('joinhandshake.com') || location.hostname.includes('indeed.com')) {
         const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
             .find(el => el.textContent?.trim().toLowerCase() === 'job description');
         desc = heading?.parentElement?.nextElementSibling || desc;
@@ -48,11 +48,19 @@ function expandJD() {
 }
 
 // 在職缺頁面上執行：抓取標題、公司、JD 全文、Easy Apply 與否
-// LinkedIn 已改用隨機雜湊 class 名稱：職稱/公司從 document.title 解析（格式固定），
-// JD 用「包含 About the job 的最內層文字區塊」啟發式定位。
+//
+// 規則：每個平台只用「語意化屬性／穩定 ID／文字內容錨點」精準定位 JD 容器，只讀取
+// 該節點的 innerText。絕不掃描整個頁面找 JD——找不到就回傳空字串，交由呼叫端重試
+// 或回報失敗，不做「掃全頁猜一塊像 JD 的內容」這種退路。
+//
+// LinkedIn：class 全是隨機雜湊（CSS Modules，如 `_8707df48`），改版就換，不能當選擇器。
+//   穩定錨點是 `data-testid="expandable-text-box"`（LinkedIn 自己 QA 自動化用的屬性）。
+// Handshake／Indeed：class 同樣是動態雜湊，穩定錨點是「文字完全等於 'Job description'
+//   的 heading」→ 其父層 → 父層的下一個相鄰 div。
 function extractJobInfo() {
     const isLinkedIn = location.hostname.includes('linkedin.com');
     const isHandshake = location.hostname.includes('joinhandshake.com');
+    const isIndeed = location.hostname.includes('indeed.com');
     let title = "", company = "", jd = "", easyApply = false, closed = false;
 
     if (isLinkedIn) {
@@ -60,25 +68,48 @@ function extractJobInfo() {
         if (parts.length >= 3) { title = parts[0]; company = parts[1]; }
         closed = /no longer accepting applications/i.test(document.body.innerText);
         easyApply = [...document.querySelectorAll('button')].some(b => /easy apply|快速應徵/i.test(b.innerText));
-        jd = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content')?.innerText?.trim() || "";
+
+        // 主要規則：直接定位 data-testid，不掃全頁
+        jd = document.querySelector('[data-testid="expandable-text-box"]')?.innerText?.trim() || "";
+
+        // 備援規則：舊版 DOM（部分版型可能還沒切換到新 data-testid）——仍是精準選擇器，不是全頁掃描
         if (!jd || jd.length < 100) {
-            const blocks = [...document.querySelectorAll('div,section,article')]
-                .filter(el => (el.innerText || '').length > 300 && /about the job/i.test(el.innerText))
-                .sort((a, b) => a.innerText.length - b.innerText.length);
-            if (blocks.length) {
-                const text = blocks[0].innerText;
-                const start = text.search(/about the job/i);
-                jd = text.slice(start >= 0 ? start : 0);
-            }
+            jd = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content')?.innerText?.trim() || "";
         }
+        // 找不到就是找不到，不做全頁掃描猜測
+    } else if (isIndeed) {
+        // Indeed /viewjob 頁面有穩定的 data-testid 與 ID，優先使用
+        title = document.querySelector('[data-testid="jobsearch-JobInfoHeader-title"]')?.innerText?.trim() || "";
+        company = document.querySelector('[data-testid="inlineHeader-companyName"]')?.innerText?.trim() || "";
+
+        // 主要規則：#jobDescriptionText 這個 ID 已穩定存在多年
+        jd = document.querySelector('#jobDescriptionText')?.innerText?.trim() || "";
+
+        // 備援：搜尋結果側欄版型沒有這個 ID，改用標題錨點。
+        // 標題文字有「Job description」與「Full job description」兩種版型，用「結尾比對」涵蓋兩者
+        if (!jd || jd.length < 100) {
+            const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
+                .find(el => /(?:^|\s)job description$/i.test(el.textContent?.trim() || ''));
+            const content = heading?.parentElement?.nextElementSibling;
+            if (content?.tagName === 'DIV') jd = content.innerText.trim();
+        }
+        if (jd) {
+            jd = jd.replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
+        if (!title) {
+            // 最後手段：document.title 慣例為「職稱 - 地點 - Indeed.com」，不含公司名，僅取職稱
+            title = document.title.replace(/\s*-\s*Indeed(\.com)?\s*$/i, '').split(' - ')[0].trim();
+        }
+        closed = /no longer accepting|job (?:is )?closed|position filled|this job (?:has expired|is no longer available)/i.test(
+            document.body.innerText.slice(0, 2000)
+        );
     } else if (isHandshake) {
-        title = document.querySelector('main h1, h1')?.innerText?.trim() || document.title;
+        title = document.querySelector('main h1, h1')?.innerText?.trim() || "";
         company = document.querySelector(
             '[data-hook="employer-name"], main [class*="employer" i], main [class*="company" i]'
         )?.innerText?.trim() || "";
 
-        // Stable anchor: do not depend on Handshake's generated sc-* classes.
-        // h*("Job description") -> parent header div -> first sibling content div.
+        // 錨點：h*(文字完全等於「Job description」) -> 父層 -> 下一個相鄰 div
         const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
             .find(el => el.textContent?.trim().toLowerCase() === 'job description');
         const content = heading?.parentElement?.nextElementSibling;
@@ -90,16 +121,11 @@ function extractJobInfo() {
                 .trim();
         }
 
-        closed = /no longer accepting|job (?:is )?closed|position filled/i.test(
-            heading?.closest('main,section,article')?.innerText || ''
+        closed = /no longer accepting|job (?:is )?closed|position filled|this job (?:has expired|is no longer available)/i.test(
+            heading?.closest('main,section,article')?.innerText || document.body.innerText.slice(0, 2000)
         );
-    } else {
-        title = document.querySelector('h1')?.innerText?.trim() || document.title;
-        company = document.querySelector('[class*="company" i] a, [class*="employer" i]')?.innerText?.trim() || "";
-        const body = document.body.innerText;
-        const start = body.search(/about the job|job description|responsibilities|職缺描述/i);
-        jd = start >= 0 ? body.slice(start, start + 8000) : body.slice(0, 8000);
     }
+    // 其餘未支援的網站：不掃描頁面，直接回傳空 jd，交由呼叫端判定為擷取失敗
 
     return { title, company, jd, easyApply, closed, url: location.href.split('?')[0] };
 }
@@ -125,7 +151,7 @@ async function extractWithRetry(tabId) {
             if (job?.jd && job.jd.length >= 100) return job;
         } catch (e) {
             if (/cannot access|host permission/i.test(e.message)) {
-                throw new Error('沒有這個網站的存取權限（僅支援 LinkedIn 與 Handshake）');
+                throw new Error('沒有這個網站的存取權限（僅支援 LinkedIn、Handshake、Indeed）');
             }
         }
         await new Promise(r => setTimeout(r, 1500));

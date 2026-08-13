@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Career Hub 一鍵匯入",
   "version": "1.0",
-  "description": "在 LinkedIn / Handshake 職缺頁一鍵抓取 JD、AI 分析並匯入 Career Hub Job Tracker",
+  "description": "在 LinkedIn / Handshake / Indeed 職缺頁一鍵抓取 JD、AI 分析並匯入 Career Hub Job Tracker",
   "action": {
     "default_popup": "popup.html",
     "default_title": "分析並匯入 Career Hub"
@@ -11,7 +11,8 @@
   "permissions": ["activeTab", "scripting", "storage", "tabs", "notifications"],
   "host_permissions": [
     "https://*.linkedin.com/*",
-    "https://*.joinhandshake.com/*"
+    "https://*.joinhandshake.com/*",
+    "https://*.indeed.com/*"
   ],
   "icons": {
     "16": "icon.png",
