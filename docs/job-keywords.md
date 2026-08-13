@@ -162,7 +162,11 @@ Associate <keyword>
 
 ## JD 擷取規則
 
-Handshake 不可將整個 `document.body` 傳給模型，也不可依賴 `sc-*` 這類動態 class。
+通用原則：不可將整個 `document.body` 傳給模型，也不可依賴 `sc-*`、`_xxxxxxxx`（CSS Modules 雜湊）這類動態 class——每次改版就換。優先順序：語意化屬性（`data-testid`、`role`）> 穩定 ID > 文字內容錨點。**不做全頁掃描退路**——以上錨點都找不到就視為擷取失敗，交由呼叫端重試或回報錯誤，絕不掃描整個頁面猜測哪一塊是 JD。
+
+### Handshake
+
+不可依賴 `sc-*` 這類動態 class。
 
 1. 找到文字完全等於 `Job description`（忽略大小寫）的 heading。
 2. 往上取得 heading 的直接父層 `div`。
@@ -184,6 +188,51 @@ const jd = await heading
 ```xpath
 //h3[normalize-space(.)='Job description']/parent::div/following-sibling::div[1]
 ```
+
+### LinkedIn
+
+LinkedIn 職缺頁的 class 全部是 CSS Modules 隨機雜湊（如 `_8707df48`），完全不可用。穩定錨點是 JD 內容容器上的 `data-testid="expandable-text-box"`——這是 LinkedIn 內部 QA 自動化用的屬性，比雜湊 class 穩定。
+
+1. 定位 `[data-testid="expandable-text-box"]`，只讀取該節點的 `innerText`。
+2. 備援：找不到時退回舊版 DOM 選擇器 `#job-details, .jobs-description__content, .jobs-box__html-content`（部分版型可能還沒切換到新 data-testid），一樣是精準選擇器，不是全頁掃描。
+3. 兩者都失敗就是擷取失敗，不做全頁掃描。
+4. 職稱／公司改從 `document.title` 解析（格式固定為「職稱 | 公司 | LinkedIn」），不依賴頁面 class。
+5. JD 少於 100 字時視為尚未載入或擷取失敗，不送進模型；擷取前先點擊「…more／see more」按鈕展開摺疊內容。
+
+Playwright locator：
+
+```js
+const jdContainer = page.locator('[data-testid="expandable-text-box"]').first();
+await jdContainer.waitFor({ state: 'visible', timeout: 15000 });
+const jd = (await jdContainer.innerText()).trim();
+```
+
+實作位置：[extension/background.js](../extension/background.js) 的 `extractJobInfo()`。
+
+### Indeed
+
+`/viewjob?jk=...` 職缺頁有多年未變的穩定 ID／`data-testid`，一律優先使用；`sc-*`（Rosetta 設計系統）雜湊 class 不可用。
+
+1. JD：`#jobDescriptionText`（穩定 ID，優先）。
+2. JD 備援：找不到 ID 時（例如搜尋結果側欄版型），改用標題錨點——h\*(文字**結尾**符合「job description」，忽略大小寫) → 父層 → 下一個相鄰 `div`。**用「結尾比對」而非精準相等**：實測發現 Indeed 至少有兩種版型，標題文字分別是 `Job description` 和 `Full job description`，結尾比對可以兩者都吃到。
+3. 兩者都失敗就是擷取失敗，不做全頁掃描。
+4. 職稱：`[data-testid="jobsearch-JobInfoHeader-title"]`；找不到才退回 `document.title` 解析（格式為「職稱 - 地點 - Indeed.com」，**不含公司名**，只能取職稱那一段）。
+5. 公司：`[data-testid="inlineHeader-companyName"]`。
+6. JD 少於 100 字時視為尚未載入或擷取失敗，不送進模型。
+
+Playwright locator：
+
+```js
+let jd = await page.locator('#jobDescriptionText').innerText().catch(() => '');
+if (jd.length < 100) {
+  const heading = page.getByRole('heading', { name: /job description$/i }).first();
+  jd = await heading.locator('xpath=parent::div/following-sibling::div[1]').innerText();
+}
+const title = await page.locator('[data-testid="jobsearch-JobInfoHeader-title"]').innerText();
+const company = await page.locator('[data-testid="inlineHeader-companyName"]').innerText();
+```
+
+實作位置：同上，`extractJobInfo()` 的 `isIndeed` 分支。
 
 ## 評分與入庫規則（下一階段）
 

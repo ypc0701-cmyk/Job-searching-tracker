@@ -43,7 +43,7 @@ btn.addEventListener('click', async () => {
     }
 
     const inputUrl = document.getElementById('job-url').value.trim();
-    if (inputUrl && !/^https:\/\/([\w-]+\.)*(linkedin\.com|joinhandshake\.com)\//.test(inputUrl)) {
+    if (inputUrl && !/^https:\/\/([\w-]+\.)*(linkedin\.com|joinhandshake\.com|indeed\.com)\//.test(inputUrl)) {
         setStatus('網址輸入目前僅支援 LinkedIn 與 Handshake 的職缺頁面', true);
         return;
     }
