@@ -7,7 +7,12 @@
     "default_popup": "popup.html",
     "default_title": "分析並匯入 Career Hub"
   },
-  "permissions": ["activeTab", "scripting", "storage"],
+  "background": { "service_worker": "background.js" },
+  "permissions": ["activeTab", "scripting", "storage", "tabs", "notifications"],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "https://*.joinhandshake.com/*"
+  ],
   "icons": {
     "16": "icon.png",
     "48": "icon.png",

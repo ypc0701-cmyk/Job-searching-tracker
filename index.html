@@ -107,7 +107,7 @@
                         <option value="Communication">Communication</option>
                         <option value="Data Analytics">Data Analytics</option>
                         <option value="Marketing Analytics">Marketing Analytics</option>
-                        <option value="Product Manager">Product Manager</option>
+                        <option value="Product Management">Product Management</option>
                         <option value="Supply Chain">Supply Chain</option>
                     </select>
                 </div>
@@ -158,6 +158,14 @@
             "messagingSenderId": "41615562183",
             "appId": "1:41615562183:web:654666dd152ed7455775e2"
         };
+
+        const RESUME_TAGS = ["Business Intelligence", "Communication", "Data Analytics", "Marketing Analytics", "Product Management", "Supply Chain"];
+        let resumeLibraryCache = null;
+        async function loadResumeLibrary() {
+            if (resumeLibraryCache) return resumeLibraryCache;
+            resumeLibraryCache = await fetch('resume-templates/resume-library.json').then(r => r.json());
+            return resumeLibraryCache;
+        }
 
         let pendingImport = null;
 
@@ -238,8 +246,19 @@
             btn.disabled = true; loader.classList.remove('hidden');
             resArea.innerHTML = `<p class="text-xs text-indigo-500 animate-pulse text-center">Gemini 正在深度掃描 JD...</p>`;
 
-            const systemPrompt = `妳是 Chloe 的職業顧問。請根據以下 JD 進行適配度分析。
+            // 載入六份履歷的實際內容，讓 Gemini 逐份比對後推薦，而非只看名稱猜測
+            const resumeLib = await loadResumeLibrary();
+            const resumeSection = Object.entries(resumeLib)
+                .map(([tag, text]) => `═══ 履歷版本「${tag}」═══\n${text.slice(0, 2600)}`)
+                .join('\n\n');
+
+            const systemPrompt = `妳是 Chloe 的職業顧問。請根據以下 JD 進行適配度分析，並從她的六份履歷版本中推薦最適合這個職缺的一份。
             候選人背景：MSBA 學生，具備 1.8M 數據處理經驗與創業背景。
+
+            以下是 Chloe 六份履歷版本的完整內容，請實際比對各版本的經歷描述與 JD 要求的重疊程度來推薦，不要只看版本名稱：
+
+            ${resumeSection}
+
             請嚴格遵守以下格式輸出：
             分數: [0-10]
             職稱: [名稱]
@@ -248,6 +267,8 @@
             工作型態: [On-site/Remote/Hybrid]
             薪資: [範圍]
             職缺URL: [網址]
+            建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
+            履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
             理由: [兩句話總結適配點]
             建議: [對策]`;
 
@@ -318,6 +339,16 @@
                 "in-job-url": ["URL", "網址", "連結"]
             };
 
+            // 建議履歷版本：獨立處理（避免被下方「建議」關鍵字的通用比對誤抓進對策備註）
+            const resumeTagLine = lines.find(l => /^建議履歷[:：]/.test(l.trim()));
+            if (resumeTagLine) {
+                const raw = resumeTagLine.split(/[:：]/).slice(1).join(':').trim();
+                const matchedTag = RESUME_TAGS.find(t => raw.includes(t));
+                if (matchedTag) document.getElementById('in-resume-tag').value = matchedTag;
+            }
+            const resumeReasonLine = lines.find(l => /^履歷理由[:：]/.test(l.trim()));
+            const resumeReason = resumeReasonLine ? resumeReasonLine.split(/[:：]/).slice(1).join(':').trim() : "";
+
             // 逐行匹配
             lines.forEach(line => {
                 for (const [id, keywords] of Object.entries(fieldMap)) {
@@ -340,14 +371,16 @@
                 }
             });
 
-            // 處理備註區塊 (理由 + 建議)
-            const reasonLines = lines.filter(l => l.includes("理由") || l.includes("Reason")).map(l => l.split(/[:：]/).slice(1).join(':').trim());
-            const adviceLines = lines.filter(l => l.includes("建議") || l.includes("Suggestion")).map(l => l.split(/[:：]/).slice(1).join(':').trim());
-            
+            // 處理備註區塊 (理由 + 建議)。用行首精確比對，避免「建議履歷」被「建議」的通用比對誤抓
+            const reasonLines = lines.filter(l => /^(理由|Reason)[:：]/.test(l.trim())).map(l => l.split(/[:：]/).slice(1).join(':').trim());
+            const adviceLines = lines.filter(l => /^(建議|Suggestion)[:：]/.test(l.trim())).map(l => l.split(/[:：]/).slice(1).join(':').trim());
+
             let notes = "";
+            const resumeTagVal = document.getElementById('in-resume-tag').value;
+            if (resumeTagVal) notes += `【建議履歷】${resumeTagVal}\n${resumeReason}\n\n`;
             if (reasonLines.length > 0) notes += `【分析理由】\n${reasonLines.join('\n')}\n\n`;
             if (adviceLines.length > 0) notes += `【對策建議】\n${adviceLines.join('\n')}`;
-            
+
             if (notes) {
                 document.getElementById('in-notes').value = notes.trim();
             }

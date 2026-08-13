@@ -24,7 +24,11 @@
         <input id="gemini-key" type="password" placeholder="貼上你的 Gemini API Key">
         <button id="save-key">儲存 Key</button>
     </div>
-    <button id="analyze-btn">✨ 分析此職缺並匯入</button>
+    <div style="margin-bottom: 10px;">
+        <label>職缺網址（留空 = 分析目前開啟的分頁）</label>
+        <input id="job-url" placeholder="https://www.linkedin.com/jobs/view/..." style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 11px; box-sizing: border-box; margin-top: 4px;">
+    </div>
+    <button id="analyze-btn">✨ 分析職缺並匯入</button>
     <div id="status"></div>
     <script src="popup.js"></script>
 </body>
