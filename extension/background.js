@@ -1,5 +1,5 @@
 const TRACKER_URL = "https://ypc0701-cmyk.github.io/Job-searching-tracker/";
-const RESUME_TAGS = ["Business Intelligence", "Communication", "Data Analytics", "Marketing Analytics", "Product Manager", "Supply Chain"];
+const RESUME_TAGS = ["Business Intelligence", "Communication", "Data Analytics", "Marketing Analytics", "Product Management", "Supply Chain"];
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
 const isOverloaded = (status, msg) => status === 503 || status === 429 || /high demand|overloaded/i.test(msg || "");
 
@@ -35,7 +35,12 @@ async function callGemini(apiKey, body) {
 // 在職缺頁面上執行：逐步捲動觸發延遲載入、展開 See more
 function expandJD() {
     window.scrollBy(0, 500);
-    const desc = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content');
+    let desc = document.querySelector('#job-details, .jobs-description__content, .jobs-box__html-content');
+    if (location.hostname.includes('joinhandshake.com')) {
+        const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
+            .find(el => el.textContent?.trim().toLowerCase() === 'job description');
+        desc = heading?.parentElement?.nextElementSibling || desc;
+    }
     if (desc) desc.scrollIntoView({ block: 'center' });
     [...document.querySelectorAll('button')]
         .filter(b => /see more|show more|顯示更多|\.{3}\s*more|…\s*more/i.test(b.innerText))
@@ -47,6 +52,7 @@ function expandJD() {
 // JD 用「包含 About the job 的最內層文字區塊」啟發式定位。
 function extractJobInfo() {
     const isLinkedIn = location.hostname.includes('linkedin.com');
+    const isHandshake = location.hostname.includes('joinhandshake.com');
     let title = "", company = "", jd = "", easyApply = false, closed = false;
 
     if (isLinkedIn) {
@@ -65,6 +71,28 @@ function extractJobInfo() {
                 jd = text.slice(start >= 0 ? start : 0);
             }
         }
+    } else if (isHandshake) {
+        title = document.querySelector('main h1, h1')?.innerText?.trim() || document.title;
+        company = document.querySelector(
+            '[data-hook="employer-name"], main [class*="employer" i], main [class*="company" i]'
+        )?.innerText?.trim() || "";
+
+        // Stable anchor: do not depend on Handshake's generated sc-* classes.
+        // h*("Job description") -> parent header div -> first sibling content div.
+        const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
+            .find(el => el.textContent?.trim().toLowerCase() === 'job description');
+        const content = heading?.parentElement?.nextElementSibling;
+        if (content?.tagName === 'DIV') {
+            jd = content.innerText
+                .replace(/\u00a0/g, ' ')
+                .replace(/[ \t]+\n/g, '\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+        }
+
+        closed = /no longer accepting|job (?:is )?closed|position filled/i.test(
+            heading?.closest('main,section,article')?.innerText || ''
+        );
     } else {
         title = document.querySelector('h1')?.innerText?.trim() || document.title;
         company = document.querySelector('[class*="company" i] a, [class*="employer" i]')?.innerText?.trim() || "";
