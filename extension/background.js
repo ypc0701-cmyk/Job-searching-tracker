@@ -43,7 +43,7 @@ function expandJD() {
     }
     if (desc) desc.scrollIntoView({ block: 'center' });
     [...document.querySelectorAll('button')]
-        .filter(b => /see more|show more|顯示更多|\.{3}\s*more|…\s*more/i.test(b.innerText))
+        .filter(b => /^more$|see more|show more|顯示更多|\.{3}\s*more|…\s*more/i.test(b.innerText?.trim() || ''))
         .forEach(b => b.click());
 }
 
@@ -104,10 +104,23 @@ function extractJobInfo() {
             document.body.innerText.slice(0, 2000)
         );
     } else if (isHandshake) {
-        title = document.querySelector('main h1, h1')?.innerText?.trim() || "";
-        company = document.querySelector(
-            '[data-hook="employer-name"], main [class*="employer" i], main [class*="company" i]'
-        )?.innerText?.trim() || "";
+        // 注意：不能寫成 'main h1, h1' 合併查詢——CSS 選擇器清單是照「文件順序」
+        // 合併結果，不是「main h1 優先、找不到才退回 h1」。Handshake 職缺頁在
+        // <main> 外面另有一個文件順序更早的頁面標題 <h1>Jobs</h1>，合併查詢
+        // 會抓到它，導致標題和公司名稱都從錯的地方找。只用 'main h1'。
+        title = document.querySelector('main h1')?.innerText?.trim() || "";
+
+        company = document.querySelector('[data-hook="employer-name"]')?.innerText?.trim() || "";
+        if (!company) {
+            // Handshake 雇主頁連結固定是 /e/<id> 這個網址樣式，比動態 class 穩定。
+            // 同一個容器裡會命中好幾個這種連結（logo 圖示、公司名稱、產業標籤、
+            // "Learn more about..." 等），文件順序最前面那個通常是空文字的 logo
+            // 連結，要找「第一個有文字內容」的，不能直接取第一個比對到的。
+            const h1 = document.querySelector('main h1');
+            const container = h1?.closest('div');
+            const links = container ? [...container.querySelectorAll('a[href^="/e/"]')] : [];
+            company = links.map(a => a.innerText.trim()).find(t => t) || '';
+        }
 
         // 錨點：h*(文字完全等於「Job description」) -> 父層 -> 下一個相鄰 div
         const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
