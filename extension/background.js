@@ -43,7 +43,7 @@ function expandJD() {
     }
     if (desc) desc.scrollIntoView({ block: 'center' });
     [...document.querySelectorAll('button')]
-        .filter(b => /see more|show more|顯示更多|\.{3}\s*more|…\s*more/i.test(b.innerText))
+        .filter(b => /^more$|see more|show more|顯示更多|\.{3}\s*more|…\s*more/i.test(b.innerText?.trim() || ''))
         .forEach(b => b.click());
 }
 
@@ -104,10 +104,23 @@ function extractJobInfo() {
             document.body.innerText.slice(0, 2000)
         );
     } else if (isHandshake) {
-        title = document.querySelector('main h1, h1')?.innerText?.trim() || "";
-        company = document.querySelector(
-            '[data-hook="employer-name"], main [class*="employer" i], main [class*="company" i]'
-        )?.innerText?.trim() || "";
+        // 注意：不能寫成 'main h1, h1' 合併查詢——CSS 選擇器清單是照「文件順序」
+        // 合併結果，不是「main h1 優先、找不到才退回 h1」。Handshake 職缺頁在
+        // <main> 外面另有一個文件順序更早的頁面標題 <h1>Jobs</h1>，合併查詢
+        // 會抓到它，導致標題和公司名稱都從錯的地方找。只用 'main h1'。
+        title = document.querySelector('main h1')?.innerText?.trim() || "";
+
+        company = document.querySelector('[data-hook="employer-name"]')?.innerText?.trim() || "";
+        if (!company) {
+            // Handshake 雇主頁連結固定是 /e/<id> 這個網址樣式，比動態 class 穩定。
+            // 同一個容器裡會命中好幾個這種連結（logo 圖示、公司名稱、產業標籤、
+            // "Learn more about..." 等），文件順序最前面那個通常是空文字的 logo
+            // 連結，要找「第一個有文字內容」的，不能直接取第一個比對到的。
+            const h1 = document.querySelector('main h1');
+            const container = h1?.closest('div');
+            const links = container ? [...container.querySelectorAll('a[href^="/e/"]')] : [];
+            company = links.map(a => a.innerText.trim()).find(t => t) || '';
+        }
 
         // 錨點：h*(文字完全等於「Job description」) -> 父層 -> 下一個相鄰 div
         const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
@@ -188,15 +201,17 @@ async function analyze({ url, tabId }) {
             .map(([tag, text]) => `═══ 履歷版本「${tag}」═══\n${text.slice(0, 2600)}`)
             .join('\n\n');
 
-        const systemPrompt = `妳是 Chloe 的職業顧問。請根據 JD 進行適配度分析，並從她的六份履歷版本中推薦最適合這個職缺的一份。
+        const systemPrompt = `妳是 Chloe 的職業顧問。請分兩步驟進行分析：
+第一步：從 Chloe 的六份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
+第二步：只針對第一步選定的那份履歷版本裡的具體經歷內容，評估與此 JD 的相符程度並打分數——分數代表「如果 Chloe 投遞這份被選定的履歷，適配程度有多高」，不是她的整體背景或其他未選中版本的經歷。
+
 候選人背景：MSBA 學生（Boston University，2027/1 畢業）。
 
-以下是 Chloe 六份履歷版本的完整內容，請實際比對各版本的經歷描述與 JD 要求的重疊程度來推薦，不要只看版本名稱：
+以下是 Chloe 六份履歷版本的完整內容：
 
 ${resumeSection}
 
-請嚴格遵守以下格式輸出，不要加任何其他文字：
-分數: [0-10]
+請嚴格遵守以下格式與順序輸出，不要加任何其他文字（先選履歷，再根據選定的履歷打分數）：
 職稱: [名稱]
 公司: [名稱]
 類別: [Intern/Full-time]
@@ -204,7 +219,8 @@ ${resumeSection}
 薪資: [範圍，未提供則寫 未提供]
 建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
 履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
-理由: [兩句話總結適配點]
+分數: [0-10，只根據上面「建議履歷」選定版本裡的具體經歷內容評分，不要參考其他版本或泛泛的整體背景]
+理由: [兩句話總結適配點，需緊扣選定履歷版本裡的具體經歷]
 建議: [對策]`;
 
         const aiText = await callGemini(geminiKey, {
