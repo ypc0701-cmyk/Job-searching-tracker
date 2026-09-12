@@ -235,13 +235,22 @@ ${resumeSection}
         };
         const resumeTagRaw = grab('建議履歷');
         const resumeTag = RESUME_TAGS.find(t => resumeTagRaw.includes(t)) || "";
+        const scoreRaw = grab('分數');
+
+        // Gemini 偶爾不會照要求的格式輸出（尤其 JD 內容異常時），這種情況下
+        // grab() 全部抓空、分數預設變 0，過去會被當成「成功」默默存進資料庫，
+        // 使用者只看到「分數 0、建議履歷未指定」卻不知道哪裡出錯。現在直接
+        // 視為失敗並附上 Gemini 原始回覆的開頭，方便判斷是不是內容本身有問題。
+        if (!resumeTagRaw || !scoreRaw) {
+            throw new Error(`Gemini 回覆格式不符預期，未包含「建議履歷」或「分數」欄位。原始回覆開頭：${aiText.slice(0, 200)}`);
+        }
 
         const payload = {
             title: job.title || grab('職稱'),
             company: job.company || grab('公司'),
             category: grab('類別'),
             type: grab('工作型態'),
-            score: parseFloat((grab('分數').match(/[\d.]+/) || [0])[0]) || 0,
+            score: parseFloat((scoreRaw.match(/[\d.]+/) || [0])[0]) || 0,
             salary: grab('薪資'),
             jobUrl: job.url,
             resumeTag,
