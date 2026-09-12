@@ -252,9 +252,21 @@
                 .map(([tag, text]) => `═══ 履歷版本「${tag}」═══\n${text.slice(0, 2600)}`)
                 .join('\n\n');
 
-            const systemPrompt = `妳是 Chloe 的職業顧問。請分兩步驟進行分析：
+            const systemPrompt = `妳是 Chloe 的職業顧問，目標是判斷這份履歷投遞後，通過企業篩選（ATS 關鍵字比對 + 招募人員初步篩選）的機率有多高。請依序完成：
+
             第一步：從 Chloe 的六份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
-            第二步：只針對第一步選定的那份履歷版本裡的具體經歷內容，評估與此 JD 的相符程度並打分數——分數代表「如果 Chloe 投遞這份被選定的履歷，適配程度有多高」，不是她的整體背景或其他未選中版本的經歷。
+
+            第二步：只針對第一步選定的那份履歷，逐項檢查：
+            (a) JD 是否有明確列出「必要條件」（年級、學位、簽證身份、特定證照、必備年資等）？選定履歷是否全部符合？
+            (b) JD 列出的核心職責（Responsibilities / What You'll Do 等段落），選定履歷裡有幾項能找到具體對應的經歷？哪些沒有對應到？
+            (c) JD 明確提到的技能／工具／技術關鍵字，選定履歷的文字裡有哪些命中、哪些缺漏？
+
+            第三步：根據以下級距給分數，分數代表「這份履歷投遞後，通過 ATS 關鍵字篩選與招募人員初步篩選的機率」，不要因為這是六選一裡最好的就自動給高分：
+            9-10 分：必要條件全滿足、核心職責幾乎逐項對應、關鍵字大多命中——ATS 和人工都很可能通過
+            7-8 分：必要條件滿足、核心職責覆蓋六至八成、關鍵字命中多數——大機率通過 ATS，人工掃過也有印象
+            5-6 分：必要條件滿足，但核心職責只覆蓋一半左右、或關鍵字明顯缺漏——可能通過寬鬆的 ATS，嚴格篩選容易被刷掉
+            3-4 分：核心職責覆蓋率低、關鍵字大量缺漏，履歷跟職缺關聯薄弱
+            0-2 分：不符合 JD 明確列出的必要條件，或六份履歷都跟此職缺缺乏實質相關性——很可能第一關就被刷掉
 
             候選人背景：MSBA 學生，具備 1.8M 數據處理經驗與創業背景。
 
@@ -262,7 +274,7 @@
 
             ${resumeSection}
 
-            請嚴格遵守以下格式與順序輸出（先選履歷，再根據選定的履歷打分數）：
+            請嚴格遵守以下格式與順序輸出（每個欄位限一行，多個項目用頓號分隔）：
             職稱: [名稱]
             公司: [名稱]
             類別: [Intern/Full-time]
@@ -271,9 +283,13 @@
             職缺URL: [網址]
             建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
             履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
-            分數: [0-10，只根據上面「建議履歷」選定版本裡的具體經歷內容評分，不要參考其他版本或泛泛的整體背景]
-            理由: [兩句話總結適配點，需緊扣選定履歷版本裡的具體經歷]
-            建議: [對策]`;
+            必要條件: [符合／不符合，若不符合列出缺少哪些條件]
+            職責覆蓋: [X/Y 項對應，列出未覆蓋的職責]
+            關鍵字命中: [列出命中的關鍵字，無則寫 無]
+            關鍵字缺漏: [列出缺漏的關鍵字，無則寫 無]
+            分數: [0-10，嚴格依照上述級距]
+            理由: [兩句話總結，需緊扣上面的職責覆蓋與關鍵字分析]
+            建議: [針對關鍵字缺漏與職責缺口，具體建議如何調整履歷內容以提高通過篩選的機率]`;
 
             // 過載時自動重試一次，仍失敗則改用備用模型
             const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
@@ -352,6 +368,16 @@
             const resumeReasonLine = lines.find(l => /^履歷理由[:：]/.test(l.trim()));
             const resumeReason = resumeReasonLine ? resumeReasonLine.split(/[:：]/).slice(1).join(':').trim() : "";
 
+            // 篩選機率分析欄位：同樣用行首精確比對獨立處理
+            const grabLine = (label) => {
+                const line = lines.find(l => new RegExp(`^${label}[:：]`).test(l.trim()));
+                return line ? line.split(/[:：]/).slice(1).join(':').trim() : "";
+            };
+            const mustHave = grabLine('必要條件');
+            const coverage = grabLine('職責覆蓋');
+            const keywordHits = grabLine('關鍵字命中');
+            const keywordGaps = grabLine('關鍵字缺漏');
+
             // 逐行匹配
             lines.forEach(line => {
                 for (const [id, keywords] of Object.entries(fieldMap)) {
@@ -381,6 +407,9 @@
             let notes = "";
             const resumeTagVal = document.getElementById('in-resume-tag').value;
             if (resumeTagVal) notes += `【建議履歷】${resumeTagVal}\n${resumeReason}\n\n`;
+            if (mustHave || coverage || keywordHits || keywordGaps) {
+                notes += `【篩選機率分析】\n必要條件：${mustHave || '未評估'}\n職責覆蓋：${coverage || '未評估'}\n關鍵字命中：${keywordHits || '未評估'}\n關鍵字缺漏：${keywordGaps || '未評估'}\n\n`;
+            }
             if (reasonLines.length > 0) notes += `【分析理由】\n${reasonLines.join('\n')}\n\n`;
             if (adviceLines.length > 0) notes += `【對策建議】\n${adviceLines.join('\n')}`;
 
