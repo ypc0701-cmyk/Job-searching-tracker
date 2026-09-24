@@ -196,7 +196,9 @@ async function analyze({ url, tabId }) {
         if (!job) throw new Error('抓不到 JD 內容。請確認網址是職缺頁面且仍開放中（已關閉的職缺不會顯示描述）');
         await setRun(`已抓取「${job.title || '未知職稱'}」，Gemini 分析中...`);
 
-        const resumeLib = await fetch(chrome.runtime.getURL('resume-library.json')).then(r => r.json());
+        // no-store: 履歷 JSON 由 scripts/sync_resumes.py 在背景覆蓋更新，
+        // 每次分析都要讀到最新內容，不能吃快取，這樣換履歷後不需要 Reload extension。
+        const resumeLib = await fetch(chrome.runtime.getURL('resume-library.json'), { cache: 'no-store' }).then(r => r.json());
         const resumeSection = Object.entries(resumeLib)
             .map(([tag, text]) => `═══ 履歷版本「${tag}」═══\n${text.slice(0, 2600)}`)
             .join('\n\n');
