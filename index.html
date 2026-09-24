@@ -168,6 +168,7 @@
         }
 
         let pendingImport = null;
+        let firstSnapshotDone = false;
 
         window.onload = () => {
             const m = location.hash.match(/^#import=(.+)$/);
@@ -219,6 +220,7 @@
                         onSnapshot(query(jobsCol, orderBy('updatedAt', 'desc')), (snap) => {
                             allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                             render();
+                            firstSnapshotDone = true;
                             runPendingImport();
                         }, (err) => console.error(err));
                     }
@@ -602,12 +604,23 @@
             }
         };
 
+        function showToast(msg, isError = false) {
+            const el = document.createElement('div');
+            el.className = `fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-2xl shadow-xl text-sm font-bold text-white ${isError ? 'bg-red-500' : 'bg-slate-900'}`;
+            el.textContent = msg;
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 5000);
+        }
+
+        // 不用 confirm()/alert()：Career Hub 分頁在背景時，瀏覽器會擋掉或卡住這類對話框。
         async function runPendingImport() {
             if (!pendingImport || !currentUser) return;
             const p = pendingImport;
             pendingImport = null;
-            const isDup = allJobs.some(j => j.jobUrl && p.jobUrl && j.jobUrl === p.jobUrl);
-            if (isDup && !confirm("這個職缺網址已存在於清單中，仍要重複匯入嗎？")) return;
+            if (allJobs.some(j => j.jobUrl && p.jobUrl && j.jobUrl === p.jobUrl)) {
+                showToast(`已略過：「${p.title || p.jobUrl}」的網址已在清單中`);
+                return;
+            }
             const data = {
                 title: p.title || "", company: p.company || "", category: p.category || "",
                 type: p.type || "", status: "未投遞", score: parseFloat(p.score) || 0,
@@ -617,8 +630,16 @@
             };
             try {
                 await addDoc(collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs'), data);
-            } catch (e) { console.error('匯入失敗', e); alert('匯入失敗：' + e.message); }
+                showToast(`已匯入：${p.title || p.jobUrl}`);
+            } catch (e) { console.error('匯入失敗', e); showToast('匯入失敗：' + e.message, true); }
         }
+
+        // Chrome extension 在 Career Hub 已開啟時直接呼叫，不需要重新載入或開新分頁
+        window.__importJob = (p) => {
+            pendingImport = p;
+            if (currentUser && firstSnapshotDone) runPendingImport();
+            return true;
+        };
 
         window.attachDocuments = async (jobId, resumeFile, coverLetterFile) => {
             if (!currentUser) return;
