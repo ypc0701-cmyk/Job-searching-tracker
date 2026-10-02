@@ -12,7 +12,8 @@
   "host_permissions": [
     "https://*.linkedin.com/*",
     "https://*.joinhandshake.com/*",
-    "https://*.indeed.com/*"
+    "https://*.indeed.com/*",
+    "https://ypc0701-cmyk.github.io/*"
   ],
   "icons": {
     "16": "icon.png",

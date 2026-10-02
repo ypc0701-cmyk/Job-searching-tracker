@@ -172,6 +172,34 @@ async function extractWithRetry(tabId) {
     return null;
 }
 
+// 已開著 Career Hub 就直接把資料交給那一頁，不開新分頁：
+//  1) 新版網站有 window.__importJob，直接呼叫，頁面狀態（開著的表單、搜尋）都不受影響
+//  2) 舊版網站（還沒部署新版）沒有這個函式，退回「換網址並重新載入」
+//  3) 完全沒有 Career Hub 分頁時才開新的。都不會切換你目前的分頁。
+async function sendToTracker(payload, encoded) {
+    const tabs = await chrome.tabs.query({ url: `${TRACKER_URL}*` });
+    for (const tab of tabs) {
+        try {
+            const [res] = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                world: 'MAIN',
+                func: (p) => typeof window.__importJob === 'function' ? (window.__importJob(p), true) : false,
+                args: [payload]
+            });
+            if (res?.result) return 'existing-tab';
+        } catch (e) { /* 分頁被休眠或無法注入，試下一個 / 走備援 */ }
+    }
+    const url = `${TRACKER_URL}#import=${encoded}`;
+    if (tabs.length) {
+        // 只換 #hash 不會重新載入頁面；加一個每次不同的查詢字串強制完整導覽
+        // （用 update 後再 reload 有時序問題，可能重新載入的還是沒有 hash 的舊網址）
+        await chrome.tabs.update(tabs[0].id, { url: `${TRACKER_URL}?_=${Date.now()}#import=${encoded}` });
+        return 'reloaded-tab';
+    }
+    await chrome.tabs.create({ url });
+    return 'new-tab';
+}
+
 async function analyze({ url, tabId }) {
     const { geminiKey } = await chrome.storage.local.get('geminiKey');
     if (!geminiKey) {
@@ -284,7 +312,7 @@ ${resumeSection}
         let bin = '';
         bytes.forEach(b => bin += String.fromCharCode(b));
         const encoded = btoa(bin);
-        await chrome.tabs.create({ url: `${TRACKER_URL}#import=${encoded}` });
+        await sendToTracker(payload, encoded);
         const doneMsg = `${payload.title}｜分數 ${payload.score}｜建議履歷：${resumeTag || '未指定'}`;
         await setRun('✓ 完成', { ok: true, message: doneMsg });
         notify('✓ 已匯入 Career Hub', doneMsg);
