@@ -46,6 +46,7 @@
                 </div>
                 <button onclick="toggleAIPanel()" class="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm">✨ AI 分析 JD</button>
                 <button onclick="openModal()" class="ai-gradient text-white px-8 py-3 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity">＋ 新增職位</button>
+                <button id="account-btn" onclick="accountAction()" class="bg-white border border-slate-200 text-slate-600 px-5 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm">帳號</button>
                 <button onclick="showSetup()" class="p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-indigo-500 transition-colors">⚙️</button>
             </div>
         </div>
@@ -145,8 +146,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, linkWithPopup, signInWithCredential, signOut, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
         let db, auth, allJobs = [], currentUser = null;
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : "chloe-career-listview";
@@ -169,6 +170,7 @@
 
         let pendingImport = null;
         let firstSnapshotDone = false;
+        let unsubJobs = null;
 
         window.onload = () => {
             const m = location.hash.match(/^#import=(.+)$/);
@@ -202,12 +204,17 @@
                 const app = initializeApp(config);
                 auth = getAuth(app);
                 db = getFirestore(app);
+                // 測試用：頁面先設定 window.__AUTH_EMULATOR__ 才會連 Firebase Auth 模擬器，一般使用不受影響
+                if (window.__AUTH_EMULATOR__) connectAuthEmulator(auth, window.__AUTH_EMULATOR__, { disableWarnings: true });
 
                 const initAuth = async () => {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
-                        await signInAnonymously(auth);
+                        // 先等 Firebase 還原上次的登入狀態：已經用 Google 登入的話不能再匿名登入，
+                        // 否則 signInAnonymously 會把 Google 登入換成一個全新的空白匿名帳號
+                        await auth.authStateReady();
+                        if (!auth.currentUser) await signInAnonymously(auth);
                     }
                 };
                 await initAuth();
@@ -215,9 +222,14 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         currentUser = user;
+                        renderAccount(user);
                         statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> 雲端同步中`;
+                        // 換帳號（例如登入 Google）時要停掉舊帳號的監聽，否則兩個帳號的資料會混在一起
+                        unsubJobs?.();
+                        allJobs = [];
+                        firstSnapshotDone = false;
                         const jobsCol = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'jobs');
-                        onSnapshot(query(jobsCol, orderBy('updatedAt', 'desc')), (snap) => {
+                        unsubJobs = onSnapshot(query(jobsCol, orderBy('updatedAt', 'desc')), (snap) => {
                             allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                             render();
                             firstSnapshotDone = true;
@@ -639,6 +651,88 @@
             pendingImport = p;
             if (currentUser && firstSnapshotDone) runPendingImport();
             return true;
+        };
+
+        function renderAccount(user) {
+            const btn = document.getElementById('account-btn');
+            if (!btn) return;
+            if (user.isAnonymous) {
+                btn.textContent = '🔐 用 Google 登入';
+                btn.title = '登入後資料會跟著帳號，手機和其他電腦也能看到';
+            } else {
+                const email = user.email || user.providerData?.[0]?.email || 'Google 帳號';
+                btn.textContent = `☁️ ${email}`;
+                btn.title = '已用 Google 登入，點一下可以登出';
+            }
+        }
+
+        // <planMigration>
+        // 決定要把哪些舊職缺複製進 Google 帳號：id 已存在、或網址已在該帳號清單中的就略過
+        function planMigration(oldDocs, existingDocs) {
+            const ids = new Set(existingDocs.map(d => d.id));
+            const urls = new Set(existingDocs.map(d => d.data.jobUrl).filter(Boolean));
+            return oldDocs.filter(d => !ids.has(d.id) && !(d.data.jobUrl && urls.has(d.data.jobUrl)));
+        }
+        // </planMigration>
+
+        // 這個 Google 帳號已經有自己的 Firebase 使用者（例如先在別的裝置登入過），
+        // 不能把目前的匿名帳號綁上去，改成：先讀出這個瀏覽器的舊職缺 → 登入 Google → 複製過去。
+        async function migrateInto(credential) {
+            const jobsCol = (uid) => collection(db, 'artifacts', APP_ID, 'users', uid, 'jobs');
+            let oldDocs;
+            try {
+                oldDocs = (await getDocs(jobsCol(auth.currentUser.uid))).docs.map(d => ({ id: d.id, data: d.data() }));
+            } catch (e) {
+                showToast('讀取這個瀏覽器的職缺失敗，已取消登入，資料沒有變動：' + e.message, true);
+                return;
+            }
+            await signInWithCredential(auth, credential);
+            const uid = auth.currentUser.uid;
+            const existingDocs = (await getDocs(jobsCol(uid))).docs.map(d => ({ id: d.id, data: d.data() }));
+            const toCopy = planMigration(oldDocs, existingDocs);
+            for (const d of toCopy) await setDoc(doc(jobsCol(uid), d.id), d.data);
+            showToast(`已用 Google 登入，搬移 ${toCopy.length} 筆職缺（略過 ${oldDocs.length - toCopy.length} 筆已存在）`);
+        }
+
+        window.signInWithGoogle = async () => {
+            const provider = new GoogleAuthProvider();
+            provider.setCustomParameters({ prompt: 'select_account' });
+            const cur = auth.currentUser;
+            try {
+                if (cur?.isAnonymous) {
+                    // 把匿名帳號升級成 Google 帳號：uid 不變，所有現有資料原地保留，不需要搬移
+                    await linkWithPopup(cur, provider);
+                    renderAccount(auth.currentUser);
+                    showToast('已用 Google 登入，現有資料都保留了');
+                } else {
+                    await signInWithPopup(auth, provider);
+                }
+            } catch (e) {
+                if (e.code === 'auth/credential-already-in-use') {
+                    await migrateInto(GoogleAuthProvider.credentialFromError(e));
+                } else if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
+                    // 使用者自己關掉視窗，不用提示
+                } else if (e.code === 'auth/operation-not-allowed') {
+                    showToast('Firebase 還沒啟用 Google 登入（Authentication → Sign-in method → Google）', true);
+                } else if (e.code === 'auth/unauthorized-domain') {
+                    showToast('這個網址還沒加入 Firebase 的 Authorized domains', true);
+                } else if (e.code === 'auth/popup-blocked') {
+                    showToast('瀏覽器擋掉了登入視窗，請允許彈出視窗後再試一次', true);
+                } else {
+                    console.error(e);
+                    showToast('登入失敗：' + e.message, true);
+                }
+            }
+        };
+
+        window.accountAction = async () => {
+            const u = auth?.currentUser;
+            if (!u) return;
+            if (u.isAnonymous) return window.signInWithGoogle();
+            if (confirm(`要登出 ${u.email || 'Google 帳號'} 嗎？\n登出後這個瀏覽器會變成空白的新工作區，之後再用 Google 登入，資料就會回來。`)) {
+                await signOut(auth);
+                location.reload();
+            }
         };
 
         window.attachDocuments = async (jobId, resumeFile, coverLetterFile) => {
