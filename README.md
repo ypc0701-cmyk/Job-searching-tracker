@@ -1,5 +1,7 @@
 # Job-searching-tracker
 
+版本紀錄見 [CHANGELOG.md](CHANGELOG.md)。
+
 ## Handshake JD 爬蟲
 
 ### 建議方式：使用 Chrome Extension
