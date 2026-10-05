@@ -169,8 +169,16 @@
         }
 
         let pendingImport = null;
+        let pendingJDText = null;
         let firstSnapshotDone = false;
         let unsubJobs = null;
+
+        // 手機 iOS 捷徑用 Base64 Encode 動作產生的字串可能是 URL-safe 版本（- _），
+        // atob() 只認標準版本（+ /），先轉換回標準字元再解碼。
+        function b64DecodeUtf8(s) {
+            const std = s.replace(/-/g, '+').replace(/_/g, '/');
+            return decodeURIComponent(escape(atob(std)));
+        }
 
         window.onload = () => {
             const m = location.hash.match(/^#import=(.+)$/);
@@ -180,9 +188,31 @@
                 } catch (e) { console.error('匯入資料解析失敗', e); }
                 history.replaceState(null, '', location.pathname + location.search);
             }
+            // 手機 iOS 捷徑：從職缺頁擷取 JD 純文字後導過來，走跟手動貼上同一套分析流程
+            const jm = location.hash.match(/^#jdtext=(.+)$/);
+            if (jm) {
+                try {
+                    pendingJDText = b64DecodeUtf8(jm[1]);
+                } catch (e) { console.error('JD 文字解析失敗', e); }
+                history.replaceState(null, '', location.pathname + location.search);
+            }
             const savedConfig = localStorage.getItem('chloe_fb_config') || (typeof __firebase_config !== 'undefined' ? __firebase_config : null) || DEFAULT_FIREBASE_CONFIG;
             startApp(typeof savedConfig === 'string' ? JSON.parse(savedConfig) : savedConfig);
+            if (pendingJDText) runPendingJDText();
         };
+
+        // 不依賴登入狀態（分析本身不用 Firestore），收到就直接跑，跟手動貼上 JD 走同一套分析函式
+        function runPendingJDText() {
+            const text = pendingJDText;
+            pendingJDText = null;
+            if (text.startsWith('ERROR:')) {
+                showToast(text.replace(/^ERROR:\s*/, ''), true);
+                return;
+            }
+            document.getElementById('ai-panel').classList.remove('hidden');
+            document.getElementById('jd-input').value = text;
+            analyzeJDNative();
+        }
 
         window.saveSetup = () => {
             const configText = document.getElementById('setup-fb-config').value.trim();
