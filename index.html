@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Career Hub | List View Mode</title>
+    <title>Career Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
@@ -15,141 +16,498 @@
         .input-field { width: 100%; padding: 12px 16px; background-color: #ffffff; border-radius: 12px; font-size: 14px; border: 1px solid #e2e8f0; outline: none; transition: border 0.2s; }
         .input-field:focus { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1); }
         .job-row:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 14px; border-radius: 10px; color: #94a3b8; font-size: 15px; font-weight: 700; letter-spacing: 0.02em; transition: color 0.15s, background-color 0.15s; }
+        .nav-item:hover { color: #4f46e5; background-color: #f8fafc; }
+        .nav-item.active-view { color: #4f46e5; background-color: #eef2ff; }
+        .icon-btn { color: #cbd5e1; transition: color 0.15s; }
+        .icon-btn:hover { color: #6366f1; }
+        .icon-btn.danger:hover { color: #ef4444; }
+        .entry-tile { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; flex-shrink: 0; }
+        .status-pill { padding: 7px 16px; border-radius: 999px; font-size: 11px; font-weight: 800; border: 1px solid #e2e8f0; color: #94a3b8; background: #fff; white-space: nowrap; transition: all 0.15s; cursor: pointer; }
+        .status-pill:hover { border-color: #c7d2fe; color: #4f46e5; }
+        .status-pill.active { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+        .pager-btn { min-width: 34px; height: 34px; padding: 0 8px; border-radius: 10px; font-size: 12px; font-weight: 800; color: #64748b; display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .pager-btn:hover:not(:disabled) { background: #f1f5f9; }
+        .pager-btn:disabled { opacity: 0.3; cursor: default; }
+        .pager-btn.active { background: #1e293b; color: #fff; }
+        .dash-card { cursor: pointer; transition: all 0.15s; border: 2px solid transparent; }
+        .dash-card:hover { transform: translateY(-2px); }
+        .dash-card.active { border-color: #4f46e5; }
     </style>
 </head>
 <body class="min-h-screen pb-20">
 
     <div id="setup-overlay" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-6 hidden">
         <div class="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl">
-            <h2 class="text-2xl font-bold text-slate-800 mb-2 text-center">資料庫設定 🔐</h2>
-            <p class="text-slate-500 text-sm mb-8 text-center">請輸入 Firebase Config JSON 以啟用雲端儲存。</p>
+            <h2 class="text-2xl font-bold text-slate-800 mb-2 text-center">Database Setup</h2>
+            <p class="text-slate-500 text-sm mb-8 text-center">Enter your Firebase Config JSON to enable cloud storage.</p>
             <div class="space-y-4">
                 <textarea id="setup-fb-config" rows="8" class="input-field font-mono text-[10px] bg-slate-50" placeholder='{ "apiKey": "...", "authDomain": "...", ... }'></textarea>
                 <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Gemini API Key（AI 分析功能用）</label>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Gemini API Key (for AI analysis)</label>
                     <input id="setup-gemini-key" class="input-field font-mono text-xs bg-slate-50" placeholder="AIza...">
                 </div>
             </div>
-            <button onclick="saveSetup()" class="w-full mt-8 ai-gradient text-white py-4 rounded-2xl font-bold hover:scale-[1.02] transition-transform">啟動系統</button>
+            <button onclick="saveSetup()" class="w-full mt-8 ai-gradient text-white py-4 rounded-2xl font-bold hover:scale-[1.02] transition-transform">Launch</button>
         </div>
     </div>
 
-    <div class="max-w-6xl mx-auto px-6 py-12">
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
-            <div>
-                <h1 class="text-4xl font-extrabold tracking-tight text-slate-900">Career <span class="text-indigo-600">Hub</span></h1>
-                <p class="text-slate-400 text-[10px] font-bold uppercase mt-2 tracking-widest">Chloe's Strategic Tracker (List View)</p>
+    <div class="max-w-6xl mx-auto px-6 pt-6">
+        <div class="bg-white border border-slate-100 rounded-2xl shadow-sm px-5 py-3 mb-10 flex items-center justify-between gap-4 flex-wrap">
+            <div class="flex items-center gap-2.5 shrink-0">
+                <h1 class="text-[23px] font-extrabold tracking-tight text-slate-900">Career <span class="text-indigo-600">Hub</span></h1>
+                <span class="hidden sm:inline text-slate-300 text-[14px] font-bold uppercase tracking-widest border-l border-slate-200 pl-2.5">Strategic Tracker</span>
             </div>
-            <div class="flex flex-wrap gap-3">
-                <div id="conn-status" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-100 rounded-full text-[10px] font-bold text-slate-400 shadow-sm">
-                    <span class="w-2 h-2 rounded-full bg-slate-300"></span> 連線中...
+            <div class="flex items-center gap-0.5">
+                <div id="conn-status" class="flex items-center gap-1.5 px-3 py-1.5 mr-2 bg-slate-50 border border-slate-100 rounded-full text-[14px] font-bold text-slate-400">
+                    <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Connecting...
                 </div>
-                <button onclick="toggleAIPanel()" class="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm">✨ AI 分析 JD</button>
-                <button onclick="openModal()" class="ai-gradient text-white px-8 py-3 rounded-2xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity">＋ 新增職位</button>
-                <button id="account-btn" onclick="accountAction()" class="bg-white border border-slate-200 text-slate-600 px-5 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm">帳號</button>
-                <button onclick="showSetup()" class="p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-indigo-500 transition-colors">⚙️</button>
+                <button id="nav-jobs" onclick="showView('jobs')" class="nav-item active-view" title="Jobs">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[25px] h-[25px]"><path d="M7 3h7l4 4v14H7V3z"/><path d="M14 3v4h4"/><path d="M9.5 12h5M9.5 15.5h5"/></svg>
+                    <span>Jobs</span>
+                </button>
+                <button onclick="openModal()" class="nav-item" title="Add a job">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[25px] h-[25px]"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+                    <span>Add Job</span>
+                </button>
+                <button id="nav-overview" onclick="showView('overview')" class="nav-item" title="Overview">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[25px] h-[25px]"><path d="M4 20V11M12 20V4M20 20v-7"/></svg>
+                    <span>Overview</span>
+                </button>
+                <button id="nav-network" onclick="showView('network')" class="nav-item" title="Network">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[25px] h-[25px]"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.3"/><path d="M3.5 19.5c.6-2.9 2.7-4.6 5.5-4.6s4.9 1.7 5.5 4.6"/><path d="M15.2 15c2 .2 3.4 1.6 3.9 3.7"/></svg>
+                    <span>Network</span>
+                </button>
+                <div class="relative">
+                    <button id="account-btn" onclick="accountAction()" class="nav-item" title="Account">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-[25px] h-[25px]"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.5 18c1-2.5 3-3.5 5.5-3.5s4.5 1 5.5 3.5"/></svg>
+                        <span id="account-label" class="max-w-[110px] truncate">Account</span>
+                    </button>
+                    <div id="account-menu" class="hidden absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 z-[70]"></div>
+                </div>
             </div>
         </div>
 
-        <div id="ai-panel" class="hidden mb-12 glass p-8 rounded-[2.5rem] shadow-xl border-2 border-indigo-50">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                    <h2 class="text-lg font-bold mb-4 text-slate-800 flex items-center gap-2">🤖 內建 AI 分析 <span class="text-[10px] bg-indigo-100 text-indigo-500 px-2 py-0.5 rounded">Native Mode</span></h2>
-                    <textarea id="jd-input" rows="8" class="input-field mb-3 bg-slate-50/50" placeholder="貼上 Job Description..."></textarea>
-                    <button onclick="analyzeJDNative()" id="analyze-btn" class="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 hover:bg-slate-800 transition-colors">
-                        <span>啟動 Chat AI 分析</span>
-                        <div id="ai-loader" class="hidden loader border-t-white"></div>
+        <!-- Overview page -->
+        <div id="overview-dashboard" class="hidden mb-10">
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <h2 class="text-2xl font-extrabold text-slate-800">Overview</h2>
+                <div class="flex items-center gap-4 flex-wrap">
+                    <div class="flex bg-slate-100 rounded-full p-1">
+                        <button id="dash-tab-week" onclick="setDashPeriod('week')" class="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors">Week</button>
+                        <button id="dash-tab-month" onclick="setDashPeriod('month')" class="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors">Month</button>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-[9px] font-black text-slate-400 uppercase mr-0.5">Week starts</span>
+                        <button id="week-start-mon" onclick="setWeekStart('monday')" class="px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors">Mon</button>
+                        <button id="week-start-sun" onclick="setWeekStart('sunday')" class="px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors">Sun</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-6" id="stats-container"></div>
+
+            <div id="dash-period-card" class="glass p-6 rounded-[2rem] shadow-sm mb-6 mx-auto transition-all" style="max-width: 640px;">
+                <div class="flex items-center justify-between mb-3">
+                    <button onclick="navigateOverviewPeriod(-1)" class="pager-btn" title="Previous">&lsaquo;</button>
+                    <div class="flex items-center gap-3">
+                        <span id="overview-period-label" class="text-sm font-black text-slate-700"></span>
+                        <button onclick="jumpToToday()" class="text-[10px] font-black text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Today</button>
+                    </div>
+                    <button onclick="navigateOverviewPeriod(1)" class="pager-btn" title="Next">&rsaquo;</button>
+                </div>
+                <div id="dash-chart-wrap" style="height: 220px;"><canvas id="dash-chart"></canvas></div>
+                <div id="dash-calendar" class="hidden"></div>
+            </div>
+
+            <div id="upcoming-interviews"></div>
+        </div>
+
+        <!-- Network page -->
+        <div id="network-page" class="hidden">
+            <div id="network-list-view">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-extrabold text-slate-800">Network</h2>
+                    <button onclick="openNewContact()" class="icon-btn" title="New contact">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
                     </button>
                 </div>
-                <div id="ai-result" class="bg-white/50 p-6 rounded-2xl border-2 border-dashed border-slate-100 flex flex-col justify-center">
-                    <p class="text-sm italic text-slate-400 text-center">分析結果將顯示於此...</p>
+                <div id="network-list" class="flex flex-col gap-5"></div>
+            </div>
+
+            <div id="network-form-view" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <button onclick="backToNetworkList()" class="flex items-center gap-1 text-slate-400 hover:text-slate-600 text-xs font-bold uppercase tracking-wider">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M14 6l-6 6 6 6"/></svg> Back
+                    </button>
+                    <button id="network-delete-btn" onclick="deleteContact()" class="hidden text-xs font-bold text-red-400 hover:text-red-600 uppercase tracking-wider">Delete</button>
                 </div>
+                <h2 id="contact-form-title" class="text-2xl font-extrabold text-slate-800 mb-6">New Contact</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">First Name</label><input id="in-contact-first" class="input-field"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Last Name</label><input id="in-contact-last" class="input-field"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Preferred Name</label><input id="in-contact-preferred" class="input-field"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Email</label><input id="in-contact-email" class="input-field"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">LinkedIn Page</label><input id="in-contact-linkedin" class="input-field"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Phone Number</label><input id="in-contact-phone" class="input-field"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Company</label><input id="in-contact-company" class="input-field"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Title</label><input id="in-contact-title" class="input-field"></div>
+                    <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Linked Job</label>
+                        <select id="in-contact-job" class="input-field cursor-pointer">
+                            <option value="">-- None --</option>
+                        </select>
+                    </div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Contact Status</label>
+                        <select id="in-contact-status" class="input-field cursor-pointer">
+                            <option value="not_contacted">Not Contacted</option>
+                            <option value="contacted">Contacted</option>
+                            <option value="replied">Replied</option>
+                            <option value="connected">Connected</option>
+                        </select>
+                    </div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Last Contacted Date</label><input type="date" id="in-contact-last-contacted" class="input-field"></div>
+                    <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Next Follow-up Date</label><input type="date" id="in-contact-next-followup" class="input-field"></div>
+                    <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Notes</label><textarea id="in-contact-notes" rows="4" class="input-field"></textarea></div>
+                </div>
+                <button onclick="saveContact()" class="w-full ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">Save Contact</button>
+                <input type="hidden" id="in-contact-id">
             </div>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12" id="stats-container"></div>
+        <!-- Jobs list (shared by Jobs page and bottom of Overview page) -->
+        <div id="jobs-list-section">
+            <div id="overview-day-chip" class="hidden mb-3"></div>
 
-        <div class="mb-6">
-            <input type="text" id="search-input" oninput="render()" placeholder="搜尋公司、職稱或備註..." class="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl text-sm shadow-sm outline-none focus:border-indigo-400">
+            <div class="mb-4 flex items-center gap-2 flex-wrap" id="status-pills"></div>
+
+            <div class="mb-6 flex items-center gap-3">
+                <input type="text" id="search-input" oninput="render()" placeholder="Search company, title, or notes..." class="flex-1 px-6 py-4 bg-white border border-slate-200 rounded-2xl text-sm shadow-sm outline-none focus:border-indigo-400">
+                <div class="relative">
+                    <button id="filter-btn" onclick="toggleFilterPanel()" class="w-14 h-14 flex items-center justify-center bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-indigo-300 transition-colors" title="Filter & sort">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-slate-500"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                    </button>
+                    <div id="filter-panel" class="hidden absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 p-5 z-[70] space-y-4">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Sort by</label>
+                            <select id="filter-sort" onchange="render()" class="input-field cursor-pointer text-xs">
+                                <option value="date_desc">Date: Newest First</option>
+                                <option value="date_asc">Date: Oldest First</option>
+                                <option value="score_desc">Score: High to Low</option>
+                                <option value="score_asc">Score: Low to High</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Work Style</label>
+                            <select id="filter-workstyle" onchange="render()" class="input-field cursor-pointer text-xs">
+                                <option value="">All</option>
+                                <option value="On-site">On-site</option>
+                                <option value="Remote">Remote</option>
+                                <option value="Hybrid">Hybrid</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-3" id="job-list"></div>
+            <div id="job-pager" class="flex items-center justify-center gap-1 mt-6"></div>
         </div>
-
-        <div class="space-y-3" id="job-list"></div>
     </div>
 
     <!-- Job Modal -->
     <div id="modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
         <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[95vh]">
             <div class="flex justify-between items-center mb-6">
-                <h2 id="modal-title" class="text-2xl font-extrabold text-slate-800">職位詳情</h2>
+                <h2 id="modal-title" class="text-2xl font-extrabold text-slate-800">Job Details</h2>
                 <button onclick="closeModal()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
             </div>
-            
+
+            <div id="modal-ai-section" class="hidden bg-indigo-50/50 p-6 rounded-2xl mb-6 border-2 border-indigo-100">
+                <h3 class="text-sm font-bold mb-3 text-slate-800 flex items-center gap-2">Job AI Analysis <span class="text-[9px] bg-indigo-100 text-indigo-500 px-2 py-0.5 rounded">Native Mode</span></h3>
+                <textarea id="modal-jd-input" rows="6" class="input-field mb-3 bg-white" placeholder="Paste the Job Description..."></textarea>
+                <button onclick="analyzeJDNative()" id="modal-analyze-btn" class="w-full bg-slate-900 text-white py-3.5 rounded-xl font-bold text-sm flex justify-center items-center gap-2 hover:bg-slate-800 transition-colors">
+                    <span>Run AI Analysis</span>
+                    <div id="modal-ai-loader" class="hidden loader border-t-white"></div>
+                </button>
+                <div id="modal-ai-result" class="mt-4 empty:mt-0"></div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">職缺名稱</label><input id="in-title" class="input-field"></div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">公司名稱</label><input id="in-company" class="input-field"></div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">類別 (Intern/Full-time)</label><input id="in-category" class="input-field"></div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">工作型態</label><input id="in-type" class="input-field"></div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">當前狀態</label>
-                    <select id="in-status" class="input-field cursor-pointer">
-                        <option value="未投遞">未投遞</option>
-                        <option value="已投遞">已投遞</option>
-                        <option value="收到面試邀請">收到面試邀請</option>
-                        <option value="拒信">拒信</option>
-                        <option value="錄取">錄取</option>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Job Title</label><input id="in-title" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Company</label><input id="in-company" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Category (e.g. Intern / Full-time)</label><input id="in-category" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Work Style</label>
+                    <select id="in-type" class="input-field cursor-pointer">
+                        <option value="">-- Select --</option>
+                        <option value="On-site">On-site</option>
+                        <option value="Remote">Remote</option>
+                        <option value="Hybrid">Hybrid</option>
                     </select>
                 </div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">適配分數 (0-10)</label>
-                    <input id="in-score" type="number" step="0.1" class="input-field" placeholder="例如: 8.5">
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">State</label><input id="in-state" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">City</label><input id="in-city" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Status</label>
+                    <select id="in-status" onchange="toggleInterviewFields()" class="input-field cursor-pointer">
+                        <option value="not_applied">Not Applied</option>
+                        <option value="applied">Applied</option>
+                        <option value="interview">Interview</option>
+                        <option value="offer">Offer</option>
+                        <option value="declined_offer">Declined Offer</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
                 </div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">建議履歷版本</label>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Apply Date</label><input id="in-apply-date" type="date" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Match Score (0-10)</label>
+                    <input id="in-score" type="number" step="0.1" class="input-field" placeholder="e.g. 8.5">
+                </div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Application Channel</label>
+                    <select id="in-channel" class="input-field cursor-pointer">
+                        <option value="">-- Select --</option>
+                        <option value="LinkedIn">LinkedIn</option>
+                        <option value="Referral">Referral</option>
+                        <option value="Company Website">Company Website</option>
+                        <option value="Handshake">Handshake</option>
+                        <option value="Indeed">Indeed</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div id="interview-fields-wrap" style="display:none;">
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Interview Stage</label>
+                        <select id="in-interview-stage" class="input-field cursor-pointer">
+                            <option value="">-- Select --</option>
+                            <option value="Phone Screen">Phone Screen</option>
+                            <option value="Technical">Technical</option>
+                            <option value="Onsite">Onsite</option>
+                            <option value="Final">Final</option>
+                        </select>
+                    </div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Next Interview Date</label><input id="in-next-interview-date" type="date" class="input-field"></div>
+                </div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Suggested Resume</label>
                     <select id="in-resume-tag" class="input-field cursor-pointer">
-                        <option value="">-- 未指定 --</option>
-                        <option value="Business Intelligence">Business Intelligence</option>
-                        <option value="Communication">Communication</option>
-                        <option value="Data Analytics">Data Analytics</option>
-                        <option value="Marketing Analytics">Marketing Analytics</option>
-                        <option value="Product Management">Product Management</option>
-                        <option value="Supply Chain">Supply Chain</option>
+                        <option value="">-- Not set --</option>
+                    </select>
+                </div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Network Contact</label>
+                    <select id="in-linked-contact" class="input-field cursor-pointer">
+                        <option value="">-- None --</option>
                     </select>
                 </div>
                 <div class="flex items-center gap-2 pt-6">
                     <input type="checkbox" id="in-easy-apply" class="w-4 h-4 rounded accent-indigo-500 cursor-pointer">
-                    <label for="in-easy-apply" class="text-xs font-bold text-slate-500 cursor-pointer">LinkedIn Easy Apply 職缺</label>
+                    <label for="in-easy-apply" class="text-xs font-bold text-slate-500 cursor-pointer">LinkedIn Easy Apply job</label>
                 </div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">薪資範圍</label><input id="in-salary" class="input-field"></div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">職缺 URL</label><input id="in-job-url" class="input-field"></div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Network 備註</label><input id="in-network" class="input-field"></div>
-                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">分析筆記</label><textarea id="in-notes" rows="3" class="input-field"></textarea></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Salary Range</label><input id="in-salary" class="input-field"></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Job URL</label><input id="in-job-url" class="input-field"></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Networking Notes</label><input id="in-network" class="input-field"></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Analysis Notes</label><textarea id="in-notes" rows="6" class="input-field"></textarea></div>
             </div>
 
             <div id="attachments-section" class="hidden bg-slate-50 p-5 rounded-2xl mb-6 border border-slate-100">
-                <p class="text-[10px] font-bold text-slate-400 uppercase mb-3">客製化文件</p>
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-3">Attached Documents</p>
                 <div id="attachments-list" class="flex flex-col gap-2"></div>
             </div>
 
-            <div class="bg-indigo-50/50 p-5 rounded-2xl mb-6 border border-indigo-100/50">
-                <p class="text-[10px] font-bold text-indigo-400 uppercase mb-2">自動填寫區塊 (貼上 AI 生成的內容)</p>
-                <textarea id="ai-scan-box" rows="2" class="input-field text-xs bg-white/80" placeholder="貼上內容後點擊同步..."></textarea>
-                <button onclick="scanAIContent()" class="mt-2 text-[10px] font-black text-indigo-500 hover:text-indigo-700 transition-colors uppercase tracking-wider">➔ 解析並填寫</button>
-            </div>
-
-            <div id="apply-reminder" class="hidden text-xs font-bold text-indigo-500 bg-indigo-50 px-4 py-3 rounded-xl mb-4">💡 建議使用履歷：<span id="apply-resume-tag"></span></div>
-            <button id="btn-apply" onclick="applyJob()" class="hidden w-full mb-4 bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors">🚀 前往應徵頁面 (Apply)</button>
+            <div id="apply-reminder" class="hidden text-xs font-bold text-indigo-500 bg-indigo-50 px-4 py-3 rounded-xl mb-4">Suggested resume: <span id="apply-resume-tag"></span></div>
+            <button id="btn-apply" onclick="applyJob()" class="hidden w-full mb-4 bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors">Go to Application Page</button>
 
             <div class="flex gap-4">
-                <button id="btn-delete" onclick="deleteJob()" class="hidden px-6 font-bold text-red-400 text-sm hover:text-red-600 transition-colors">刪除紀錄</button>
-                <button onclick="saveJob()" class="flex-1 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">儲存職位資料</button>
+                <button id="btn-delete" onclick="deleteJob()" class="hidden px-6 font-bold text-red-400 text-sm hover:text-red-600 transition-colors">Delete</button>
+                <button onclick="saveJob()" class="flex-1 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">Save Job</button>
             </div>
             <input type="hidden" id="in-id">
         </div>
     </div>
 
+    <!-- Resume Modal -->
+    <div id="resume-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[95vh]">
+
+            <div id="resume-list-view">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-extrabold text-slate-800">My Resumes</h2>
+                    <div class="flex items-center gap-4">
+                        <button onclick="openNewResume()" class="icon-btn" title="New resume">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+                        </button>
+                        <button onclick="closeResumeManager()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
+                    </div>
+                </div>
+                <div id="resume-list" class="flex flex-col gap-2"></div>
+            </div>
+
+            <div id="resume-detail-view" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <button onclick="backToResumeList()" class="flex items-center gap-1 text-slate-400 hover:text-slate-600 text-xs font-bold uppercase tracking-wider">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M14 6l-6 6 6 6"/></svg> Back
+                    </button>
+                    <div class="flex items-center gap-4">
+                        <button id="resume-edit-btn" onclick="startEditResume()" class="text-xs font-bold text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Edit</button>
+                        <button onclick="deleteResume()" class="text-xs font-bold text-red-400 hover:text-red-600 uppercase tracking-wider">Delete</button>
+                        <button onclick="closeResumeManager()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
+                    </div>
+                </div>
+
+                <h2 id="resume-detail-title" class="text-2xl font-extrabold text-slate-800 mb-6"></h2>
+                <input id="in-resume-edit-tag" class="input-field mb-6 hidden" placeholder="Resume name, e.g. Business Intelligence">
+
+                <div id="resume-detail-text-readonly" class="input-field whitespace-pre-wrap text-xs font-mono bg-slate-50 min-h-[320px] leading-relaxed"></div>
+                <textarea id="in-resume-edit-text" rows="16" class="input-field font-mono text-xs hidden"></textarea>
+
+                <button id="resume-save-btn" onclick="saveResume()" class="hidden w-full mt-6 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">Save</button>
+
+                <input type="hidden" id="in-resume-edit-id">
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div id="profile-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-3xl shadow-2xl overflow-y-auto max-h-[95vh]">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-extrabold text-slate-800">Profile</h2>
+                <button onclick="closeProfile()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
+            </div>
+
+            <div id="profile-incomplete-banner" class="hidden bg-amber-50 border border-amber-100 text-amber-600 text-xs font-bold px-4 py-3 rounded-xl mb-6">Your profile isn't complete yet. Fill in your name, email, phone, and at least one experience and education entry before AI can generate tailored resumes.</div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Full Name</label><input id="in-profile-name" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Email</label><input id="in-profile-email" class="input-field"></div>
+                <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Phone</label><input id="in-profile-phone" class="input-field"></div>
+            </div>
+            <button onclick="saveProfileIdentity()" class="mb-6 text-[10px] font-black text-indigo-500 hover:text-indigo-700 transition-colors uppercase tracking-wider">&#10148; Save Basic Info</button>
+
+            <div class="bg-indigo-50/50 p-5 rounded-2xl mb-8 border border-indigo-100/50">
+                <p class="text-[10px] font-bold text-indigo-400 uppercase mb-2">Paste a full resume to auto-fill your Profile</p>
+                <textarea id="profile-resume-input" rows="6" class="input-field text-xs bg-white/80" placeholder="Paste the full resume text..."></textarea>
+                <button id="profile-parse-btn" onclick="parseResumeIntoProfile()" class="mt-2 text-[10px] font-black text-indigo-500 hover:text-indigo-700 transition-colors uppercase tracking-wider">&#10148; Parse &amp; Fill Profile</button>
+                <p id="profile-parse-status" class="text-xs mt-2"></p>
+            </div>
+
+            <div class="space-y-8 mb-8">
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Experience</h3>
+                        <button onclick="openEntryForm('experience')" class="icon-btn" title="Add experience">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                    </div>
+                    <div id="profile-experience-list" class="flex flex-col gap-2"></div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Education</h3>
+                        <button onclick="openEntryForm('education')" class="icon-btn" title="Add education">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                    </div>
+                    <div id="profile-education-list" class="flex flex-col gap-2"></div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Languages</h3>
+                        <button onclick="openEntryForm('languages')" class="icon-btn" title="Add language">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                    </div>
+                    <div id="profile-languages-list" class="flex flex-col gap-2"></div>
+                </div>
+                <div>
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">Courses</h3>
+                    <div class="flex gap-2">
+                        <input id="courses-input" class="input-field text-xs" placeholder="Separate with commas, e.g. Machine Learning, Python Programming">
+                        <button onclick="saveCourses()" class="px-4 text-xs font-bold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">Save</button>
+                    </div>
+                    <div id="courses-chips" class="flex flex-wrap gap-2 mt-2"></div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Organizations</h3>
+                        <button onclick="openEntryForm('organizations')" class="icon-btn" title="Add organization">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                    </div>
+                    <div id="profile-organizations-list" class="flex flex-col gap-2"></div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Projects</h3>
+                        <button onclick="openEntryForm('projects')" class="icon-btn" title="Add project">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                    </div>
+                    <div id="profile-projects-list" class="flex flex-col gap-2"></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Entry Editor Modal (opens on top of Profile for add/edit of a single Experience / Education / Language / Organization / Project entry) -->
+    <div id="entry-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-[60] p-4">
+        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl overflow-y-auto max-h-[95vh]">
+            <div class="flex justify-between items-center mb-6">
+                <h2 id="entry-form-title" class="text-2xl font-extrabold text-slate-800">New Entry</h2>
+                <button onclick="closeEntryForm()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
+            </div>
+            <div id="entry-form-fields" class="space-y-4"></div>
+            <div class="flex items-center justify-between mt-8">
+                <button id="entry-form-remove" onclick="removeCurrentEntry()" class="hidden font-bold text-red-400 text-sm hover:text-red-600 transition-colors">Remove</button>
+                <span class="flex-1"></span>
+                <button onclick="saveEntry()" class="ai-gradient text-white px-8 py-3 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">Save and Close</button>
+            </div>
+            <input type="hidden" id="in-entry-id">
+        </div>
+    </div>
+
+    <!-- Auth Modal (Sign Up / Log In) -->
+    <div id="auth-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-[70] p-4">
+        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl overflow-y-auto max-h-[95vh]">
+            <div class="flex justify-between items-center mb-6">
+                <h2 id="auth-modal-title" class="text-2xl font-extrabold text-slate-800">Create an Account</h2>
+                <button onclick="closeAuthModal()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
+            </div>
+            <div id="auth-signup-fields" class="grid grid-cols-2 gap-3 mb-3">
+                <input id="auth-first-name" class="input-field" placeholder="First Name">
+                <input id="auth-last-name" class="input-field" placeholder="Last Name">
+            </div>
+            <div class="space-y-3">
+                <input id="auth-email" type="email" class="input-field" placeholder="Email">
+                <input id="auth-password" type="password" class="input-field" placeholder="Password">
+            </div>
+            <button id="auth-submit-btn" onclick="submitAuthForm()" class="w-full mt-5 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">Create Account</button>
+            <p class="text-center text-xs text-slate-400 mt-4">
+                <span id="auth-toggle-signup">Already have an account? <button onclick="setAuthMode('login')" class="font-bold text-indigo-500 hover:text-indigo-700">Log in</button></span>
+                <span id="auth-toggle-login" class="hidden">Don't have an account? <button onclick="setAuthMode('signup')" class="font-bold text-indigo-500 hover:text-indigo-700">Sign up</button></span>
+            </p>
+            <div class="flex items-center gap-3 my-5">
+                <div class="flex-1 h-px bg-slate-100"></div>
+                <span class="text-[10px] font-bold text-slate-300 uppercase">Or continue with</span>
+                <div class="flex-1 h-px bg-slate-100"></div>
+            </div>
+            <button onclick="signInWithGoogle()" class="w-full py-3.5 rounded-2xl font-bold text-sm border border-slate-200 hover:border-slate-300 transition-colors flex items-center justify-center gap-2">
+                <svg viewBox="0 0 24 24" class="w-4 h-4"><path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.46c-.28 1.5-1.13 2.78-2.4 3.63v3.02h3.89c2.27-2.09 3.57-5.17 3.57-8.84z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.9l-3.89-3.02c-1.08.72-2.45 1.15-4.04 1.15-3.11 0-5.74-2.1-6.68-4.92H1.3v3.09C3.26 21.3 7.3 24 12 24z"/><path fill="#FBBC05" d="M5.32 14.31A7.2 7.2 0 0 1 4.93 12c0-.8.14-1.58.39-2.31V6.6H1.3A11.98 11.98 0 0 0 0 12c0 1.93.46 3.76 1.3 5.4l4.02-3.09z"/><path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.94 1.19 15.24 0 12 0 7.3 0 3.26 2.7 1.3 6.6l4.02 3.09C6.26 6.87 8.89 4.77 12 4.77z"/></svg>
+                Sign in with Google
+            </button>
+        </div>
+    </div>
+
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, linkWithPopup, signInWithCredential, signOut, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, linkWithPopup, signInWithCredential, linkWithCredential, EmailAuthProvider, signOut, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
         let db, auth, allJobs = [], currentUser = null;
+        let activeStatusFilter = null, currentPage = 1;
+        let dashPeriod = 'week';
+        let authMode = 'signup';
+        let currentView = 'jobs';
+        let overviewWeekAnchor = new Date();
+        let overviewMonthAnchor = new Date();
+        let selectedOverviewDay = null;
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : "chloe-career-listview";
         const DEFAULT_FIREBASE_CONFIG = {
             "apiKey": "AIzaSyAOJJfeH_3WSlCl3Ncyt8RRzttu8cY77Sg",
@@ -160,12 +518,126 @@
             "appId": "1:41615562183:web:654666dd152ed7455775e2"
         };
 
-        const RESUME_TAGS = ["Business Intelligence", "Communication", "Data Analytics", "Marketing Analytics", "Product Management", "Supply Chain"];
-        let resumeLibraryCache = null;
-        async function loadResumeLibrary() {
-            if (resumeLibraryCache) return resumeLibraryCache;
-            resumeLibraryCache = await fetch('resume-templates/resume-library.json').then(r => r.json());
-            return resumeLibraryCache;
+        // 使用者自己的履歷庫（取代舊版全站共用的 RESUME_TAGS／resume-library.json）
+        let userResumes = [];
+        let unsubResumes = null;
+        let resumeManagerOpen = false;
+
+        // 結構化 Profile 主檔（Experience md 的具體實作）
+        let userProfile = {};
+        let unsubProfile = null;
+        let profileModalOpen = false;
+        let currentEditSection = null;
+
+        // Network（聯絡人追蹤）
+        let userContacts = [];
+        let unsubContacts = null;
+        let networkManagerOpen = false;
+
+        const LANGUAGE_LEVELS = [
+            'Native or bilingual proficiency',
+            'Full professional proficiency',
+            'Professional working proficiency',
+            'Limited working proficiency',
+            'Elementary proficiency'
+        ];
+        const ENTRY_FIELDS = {
+            experience: [
+                { key: 'title', label: 'Title', type: 'text' },
+                { key: 'company', label: 'Company', type: 'text' },
+                { key: 'type', label: 'Type (e.g. Internship / Full-time)', type: 'text' },
+                { key: 'startDate', label: 'Start Date', type: 'text' },
+                { key: 'endDate', label: 'End Date', type: 'text' },
+                { key: 'description', label: 'Description', type: 'textarea' }
+            ],
+            education: [
+                { key: 'degree', label: 'Degree (e.g. Master\'s, Business Analytics MS)', type: 'text' },
+                { key: 'school', label: 'School', type: 'text' },
+                { key: 'department', label: 'Department', type: 'text' },
+                { key: 'status', label: 'Status (e.g. Present · Masters)', type: 'text' },
+                { key: 'startDate', label: 'Start Date', type: 'text' },
+                { key: 'endDate', label: 'End Date', type: 'text' },
+                { key: 'primary', label: 'Primary education', type: 'checkbox' }
+            ],
+            languages: [
+                { key: 'language', label: 'Language', type: 'text' },
+                { key: 'proficiency', label: 'Proficiency', type: 'select', options: LANGUAGE_LEVELS }
+            ],
+            organizations: [
+                { key: 'role', label: 'Role', type: 'text' },
+                { key: 'org', label: 'Organization', type: 'text' },
+                { key: 'startDate', label: 'Start Date', type: 'text' },
+                { key: 'endDate', label: 'End Date', type: 'text' }
+            ],
+            projects: [
+                { key: 'title', label: 'Project Name', type: 'text' },
+                { key: 'type', label: 'Type / Context', type: 'text' },
+                { key: 'description', label: 'Description', type: 'textarea' }
+            ]
+        };
+        const SECTION_LABELS = { experience: 'Experience', education: 'Education', languages: 'Language', organizations: 'Organization', projects: 'Project' };
+
+        // 狀態值：英文 code。STATUS_LABELS 給顯示文字、STATUS_COLORS 給徽章樣式。
+        const STATUS_VALUES = ['not_applied', 'applied', 'interview', 'offer', 'declined_offer', 'rejected'];
+        const STATUS_LABELS = { not_applied: 'Not Applied', applied: 'Applied', interview: 'Interview', offer: 'Offer', declined_offer: 'Declined Offer', rejected: 'Rejected' };
+        const STATUS_COLORS = {
+            not_applied: 'bg-slate-50 text-slate-400 border-slate-100',
+            applied: 'bg-green-50 text-green-600 border-green-100',
+            interview: 'bg-amber-50 text-amber-600 border-amber-100 animate-pulse',
+            offer: 'bg-indigo-50 text-indigo-600 border-indigo-100 font-black',
+            declined_offer: 'bg-purple-50 text-purple-500 border-purple-100',
+            rejected: 'bg-red-50 text-red-600 border-red-100'
+        };
+        // 舊資料是中文 status 值；讀取時即時轉成新 code，不強制搬移既有 Firestore 文件
+        const LEGACY_STATUS_MAP = { '未投遞': 'not_applied', '已投遞': 'applied', '收到面試邀請': 'interview', '拒信': 'rejected', '錄取': 'offer' };
+        function normalizeStatus(s) {
+            return LEGACY_STATUS_MAP[s] || s || 'not_applied';
+        }
+        const CONTACT_STATUS_LABELS = { not_contacted: 'Not Contacted', contacted: 'Contacted', replied: 'Replied', connected: 'Connected' };
+
+        // Overview 月曆熱力圖的 4 階暖色（0 筆不算在內，另外處理）
+        const HEAT_CLASSES = [
+            'bg-white text-slate-300 border-slate-100',
+            'bg-amber-50 text-amber-600 border-amber-100',
+            'bg-orange-100 text-orange-600 border-orange-200',
+            'bg-orange-200 text-orange-700 border-orange-300',
+            'bg-red-200 text-red-700 border-red-300'
+        ];
+        function heatLevel(count, maxCount) {
+            if (count <= 0) return 0;
+            const ratio = count / maxCount;
+            if (ratio <= 0.25) return 1;
+            if (ratio <= 0.5) return 2;
+            if (ratio <= 0.75) return 3;
+            return 4;
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // Gemini 呼叫：analyzeJDNative 與 parseResumeIntoProfile 共用同一套重試／備用模型邏輯
+        const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+        const isOverloaded = (status, msg) => status === 503 || status === 429 || /high demand|overloaded/i.test(msg || "");
+        async function callGemini(apiKey, body, onStatus) {
+            let lastErr = null;
+            for (const model of GEMINI_MODELS) {
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    const result = await resp.json();
+                    if (resp.ok) return result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                    const msg = result?.error?.message || `HTTP ${resp.status}`;
+                    if (!isOverloaded(resp.status, msg)) throw new Error(msg);
+                    lastErr = new Error(msg);
+                    onStatus?.(`${model} is busy, ${attempt === 1 ? 'retrying' : 'switching to backup model'}...`);
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+            throw lastErr;
         }
 
         let pendingImport = null;
@@ -209,8 +681,8 @@
                 showToast(text.replace(/^ERROR:\s*/, ''), true);
                 return;
             }
-            document.getElementById('ai-panel').classList.remove('hidden');
-            document.getElementById('jd-input').value = text;
+            openModal();
+            document.getElementById('modal-jd-input').value = text;
             analyzeJDNative();
         }
 
@@ -253,28 +725,51 @@
                     if (user) {
                         currentUser = user;
                         renderAccount(user);
-                        statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> 雲端同步中`;
+                        statusEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> Synced`;
                         // 換帳號（例如登入 Google）時要停掉舊帳號的監聽，否則兩個帳號的資料會混在一起
                         unsubJobs?.();
+                        unsubResumes?.();
+                        unsubProfile?.();
+                        unsubContacts?.();
                         allJobs = [];
                         firstSnapshotDone = false;
                         const jobsCol = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'jobs');
                         unsubJobs = onSnapshot(query(jobsCol, orderBy('updatedAt', 'desc')), (snap) => {
-                            allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                            allJobs = snap.docs.map(d => ({ id: d.id, ...d.data(), status: normalizeStatus(d.data().status) }));
                             render();
+                            if (currentView === 'overview') updateDashboard(allJobs);
                             firstSnapshotDone = true;
                             runPendingImport();
                         }, (err) => console.error(err));
+
+                        const resumesCol = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'resumes');
+                        unsubResumes = onSnapshot(query(resumesCol, orderBy('tag')), (snap) => {
+                            userResumes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                            renderResumeTagOptions();
+                            if (resumeManagerOpen) renderResumeManager();
+                        }, (err) => console.error(err));
+
+                        unsubProfile = onSnapshot(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'profile', 'main'), (snap) => {
+                            userProfile = snap.exists() ? snap.data() : {};
+                            if (profileModalOpen) renderProfile();
+                        }, (err) => console.error(err));
+
+                        const contactsCol = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'contacts');
+                        unsubContacts = onSnapshot(query(contactsCol, orderBy('company')), (snap) => {
+                            userContacts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                            if (networkManagerOpen) renderNetworkList();
+                            renderJobContactOptions();
+                        }, (err) => console.error(err));
                     }
                 });
-            } catch (err) { 
-                statusEl.innerHTML = "連線失敗"; 
-                console.error(err); 
+            } catch (err) {
+                statusEl.innerHTML = "Connection failed";
+                console.error(err);
             }
         }
 
         window.analyzeJDNative = async () => {
-            const jd = document.getElementById('jd-input').value;
+            const jd = document.getElementById('modal-jd-input').value;
             if (!jd) return;
 
             const apiKey = localStorage.getItem('chloe_gemini_key') || "";
@@ -282,30 +777,33 @@
                 showSetup();
                 return;
             }
+            if (!userResumes.length) {
+                showToast('Add at least one resume under "Resumes" before running an analysis', true);
+                return;
+            }
 
-            const btn = document.getElementById('analyze-btn');
-            const loader = document.getElementById('ai-loader');
-            const resArea = document.getElementById('ai-result');
-            
+            const btn = document.getElementById('modal-analyze-btn');
+            const loader = document.getElementById('modal-ai-loader');
+            const resArea = document.getElementById('modal-ai-result');
+
             btn.disabled = true; loader.classList.remove('hidden');
-            resArea.innerHTML = `<p class="text-xs text-indigo-500 animate-pulse text-center">Gemini 正在深度掃描 JD...</p>`;
+            resArea.innerHTML = `<p class="text-xs text-indigo-500 animate-pulse text-center">Gemini is deep-scanning the JD...</p>`;
 
-            // 載入六份履歷的實際內容，讓 Gemini 逐份比對後推薦，而非只看名稱猜測
-            const resumeLib = await loadResumeLibrary();
-            const resumeSection = Object.entries(resumeLib)
-                .map(([tag, text]) => `═══ 履歷版本「${tag}」═══\n${text.slice(0, 2600)}`)
+            // 使用者自己履歷庫的實際內容，讓 Gemini 逐份比對後推薦，而非只看名稱猜測
+            const resumeSection = userResumes
+                .map(r => `═══ 履歷版本「${r.tag}」═══\n${(r.text || '').slice(0, 2600)}`)
                 .join('\n\n');
 
             const systemPrompt = `妳是 Chloe 的職業顧問，目標是判斷這份履歷投遞後，通過企業篩選（ATS 關鍵字比對 + 招募人員初步篩選）的機率有多高。請依序完成：
 
-            第一步：從 Chloe 的六份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
+            第一步：從 Chloe 的每一份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
 
             第二步：只針對第一步選定的那份履歷，逐項檢查：
             (a) JD 是否有明確列出「必要條件」（年級、學位、簽證身份、特定證照、必備年資等）？選定履歷是否全部符合？
             (b) JD 列出的核心職責（Responsibilities / What You'll Do 等段落），選定履歷裡有幾項能找到具體對應的經歷？哪些沒有對應到？
             (c) JD 明確提到的技能／工具／技術關鍵字，選定履歷的文字裡有哪些命中、哪些缺漏？
 
-            第三步：根據以下級距給分數，分數代表「這份履歷投遞後，通過 ATS 關鍵字篩選與招募人員初步篩選的機率」，不要因為這是六選一裡最好的就自動給高分：
+            第三步：根據以下級距給分數，分數代表「這份履歷投遞後，通過 ATS 關鍵字篩選與招募人員初步篩選的機率」，不要因為這是裡面最好的就自動給高分：
             9-10 分：必要條件全滿足、核心職責幾乎逐項對應、關鍵字大多命中——ATS 和人工都很可能通過
             7-8 分：必要條件滿足、核心職責覆蓋六至八成、關鍵字命中多數——大機率通過 ATS，人工掃過也有印象
             5-6 分：必要條件滿足，但核心職責只覆蓋一半左右、或關鍵字明顯缺漏——可能通過寬鬆的 ATS，嚴格篩選容易被刷掉
@@ -314,7 +812,7 @@
 
             候選人背景：MSBA 學生，具備 1.8M 數據處理經驗與創業背景。
 
-            以下是 Chloe 六份履歷版本的完整內容：
+            以下是 Chloe 所有履歷版本的完整內容：
 
             ${resumeSection}
 
@@ -325,7 +823,7 @@
             工作型態: [On-site/Remote/Hybrid]
             薪資: [範圍]
             職缺URL: [網址]
-            建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
+            建議履歷: [${userResumes.map(r => r.tag).join('、')} 其中之一]
             履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
             必要條件: [符合／不符合，若不符合列出缺少哪些條件]
             職責覆蓋: [X/Y 項對應，列出未覆蓋的職責]
@@ -335,57 +833,32 @@
             理由: [兩句話總結，需緊扣上面的職責覆蓋與關鍵字分析]
             建議: [針對關鍵字缺漏與職責缺口，具體建議如何調整履歷內容以提高通過篩選的機率]`;
 
-            // 過載時自動重試一次，仍失敗則改用備用模型
-            const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
-            const isOverloaded = (status, msg) => status === 503 || status === 429 || /high demand|overloaded/i.test(msg || "");
-            const callGemini = async (body) => {
-                let lastErr = null;
-                for (const model of GEMINI_MODELS) {
-                    for (let attempt = 1; attempt <= 2; attempt++) {
-                        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body)
-                        });
-                        const result = await resp.json();
-                        if (resp.ok) return result.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                        const msg = result?.error?.message || `HTTP ${resp.status}`;
-                        if (!isOverloaded(resp.status, msg)) throw new Error(msg);
-                        lastErr = new Error(msg);
-                        resArea.innerHTML = `<p class="text-xs text-amber-500 animate-pulse text-center">${model} 忙碌中，${attempt === 1 ? '重試中' : '改用備用模型'}...</p>`;
-                        await new Promise(r => setTimeout(r, 2000));
-                    }
-                }
-                throw lastErr;
-            };
-
             try {
-                const aiText = await callGemini({
+                const aiText = await callGemini(apiKey, {
                     contents: [{ parts: [{ text: `JD內容: ${jd}` }] }],
                     systemInstruction: { parts: [{ text: systemPrompt }] }
-                }) || "分析失敗（Gemini 未回傳內容，可能被安全過濾攔截）";
+                }, (msg) => { resArea.innerHTML = `<p class="text-xs text-amber-500 animate-pulse text-center">${msg}</p>`; }) || "Analysis failed (Gemini returned no content, possibly blocked by safety filters)";
 
                 resArea.innerHTML = `
                     <div class="text-left text-xs bg-slate-50 p-4 rounded-xl border border-indigo-100 max-h-[300px] overflow-y-auto">
                         <pre class="whitespace-pre-wrap font-sans text-slate-700 leading-relaxed">${aiText}</pre>
-                        <button onclick="copyAndOpen(\`${aiText.replace(/`/g, "\\`").replace(/\$/g, "\\$")}\`)" class="w-full mt-4 py-3 ai-gradient text-white rounded-lg font-bold shadow-md">同步並新增</button>
+                        <button onclick="parseAIText(\`${aiText.replace(/`/g, "\\`").replace(/\$/g, "\\$")}\`)" class="w-full mt-4 py-3 ai-gradient text-white rounded-lg font-bold shadow-md">Fill Job Fields</button>
                     </div>`;
             } catch (e) {
-                resArea.innerHTML = `<div class="p-4 text-red-400 text-xs text-center">錯誤：${e.message}</div>`;
+                resArea.innerHTML = `<div class="p-4 text-red-400 text-xs text-center">Error: ${e.message}</div>`;
             } finally {
                 btn.disabled = false; loader.classList.add('hidden');
             }
         };
 
+        // 從 Chrome extension 匯入 JD（已經在背景分析好）：開 modal 後直接回填欄位
         window.copyAndOpen = (text) => {
             openModal();
-            document.getElementById('ai-scan-box').value = text;
-            setTimeout(() => scanAIContent(), 100);
+            parseAIText(text);
         };
 
-        // 強化版解析邏輯
-        window.scanAIContent = () => {
-            const rawText = document.getElementById('ai-scan-box').value;
+        // 強化版解析邏輯：把 AI 分析結果文字直接解析、填進目前已開啟的 Job Modal 欄位
+        window.parseAIText = (rawText) => {
             if (!rawText) return;
 
             // 1. 預處理：移除所有 Markdown 符號（如 **）並統一換行
@@ -406,7 +879,7 @@
             const resumeTagLine = lines.find(l => /^建議履歷[:：]/.test(l.trim()));
             if (resumeTagLine) {
                 const raw = resumeTagLine.split(/[:：]/).slice(1).join(':').trim();
-                const matchedTag = RESUME_TAGS.find(t => raw.includes(t));
+                const matchedTag = userResumes.map(r => r.tag).find(t => raw.includes(t));
                 if (matchedTag) document.getElementById('in-resume-tag').value = matchedTag;
             }
             const resumeReasonLine = lines.find(l => /^履歷理由[:：]/.test(l.trim()));
@@ -450,38 +923,49 @@
 
             let notes = "";
             const resumeTagVal = document.getElementById('in-resume-tag').value;
-            if (resumeTagVal) notes += `【建議履歷】${resumeTagVal}\n${resumeReason}\n\n`;
+            if (resumeTagVal) notes += `[Suggested Resume] ${resumeTagVal}\n${resumeReason}\n\n`;
             if (mustHave || coverage || keywordHits || keywordGaps) {
-                notes += `【篩選機率分析】\n必要條件：${mustHave || '未評估'}\n職責覆蓋：${coverage || '未評估'}\n關鍵字命中：${keywordHits || '未評估'}\n關鍵字缺漏：${keywordGaps || '未評估'}\n\n`;
+                notes += `[Screening Odds]\nRequirements: ${mustHave || 'Not assessed'}\nResponsibility coverage: ${coverage || 'Not assessed'}\nKeyword hits: ${keywordHits || 'Not assessed'}\nKeyword gaps: ${keywordGaps || 'Not assessed'}\n\n`;
             }
-            if (reasonLines.length > 0) notes += `【分析理由】\n${reasonLines.join('\n')}\n\n`;
-            if (adviceLines.length > 0) notes += `【對策建議】\n${adviceLines.join('\n')}`;
+            if (reasonLines.length > 0) notes += `[Reasoning]\n${reasonLines.join('\n')}\n\n`;
+            if (adviceLines.length > 0) notes += `[Suggestions]\n${adviceLines.join('\n')}`;
 
             if (notes) {
                 document.getElementById('in-notes').value = notes.trim();
             }
 
-            // 閃爍效果
-            const container = document.getElementById('ai-scan-box');
-            container.style.backgroundColor = "#f0fdf4";
-            setTimeout(() => container.style.backgroundColor = "white", 500);
+            showToast('AI results filled into the form');
         };
 
         window.saveJob = async () => {
             if (!currentUser) return;
             const id = document.getElementById('in-id').value;
+            const prevJob = id ? allJobs.find(x => x.id === id) : null;
+            const newStatus = document.getElementById('in-status').value;
+            let applyDate = document.getElementById('in-apply-date').value;
+            // Status 剛變成 Applied、Apply Date 還是空的，才自動帶入今天日期；欄位本身隨時能手動覆蓋
+            if (newStatus === 'applied' && prevJob?.status !== 'applied' && !applyDate) {
+                applyDate = new Date().toISOString().slice(0, 10);
+            }
             const data = {
                 title: document.getElementById('in-title').value,
                 company: document.getElementById('in-company').value,
                 category: document.getElementById('in-category').value,
                 type: document.getElementById('in-type').value,
-                status: document.getElementById('in-status').value,
+                state: document.getElementById('in-state').value,
+                city: document.getElementById('in-city').value,
+                status: newStatus,
+                applyDate,
+                channel: document.getElementById('in-channel').value,
+                interviewStage: newStatus === 'interview' ? document.getElementById('in-interview-stage').value : '',
+                nextInterviewDate: newStatus === 'interview' ? document.getElementById('in-next-interview-date').value : '',
                 score: parseFloat(document.getElementById('in-score').value) || 0,
                 salary: document.getElementById('in-salary').value,
                 jobUrl: document.getElementById('in-job-url').value,
                 network: document.getElementById('in-network').value,
                 notes: document.getElementById('in-notes').value,
                 resumeTag: document.getElementById('in-resume-tag').value,
+                linkedContactId: document.getElementById('in-linked-contact').value,
                 easyApply: document.getElementById('in-easy-apply').checked,
                 updatedAt: serverTimestamp()
             };
@@ -492,18 +976,55 @@
             } catch (e) { console.error(e); }
         };
 
+        // 本地日曆日期字串（YYYY-MM-DD），不能用 toISOString()：那會先轉成 UTC，
+        // 在 UTC+8（台北）午夜前後建立的資料會被換算成前一天，跟使用者看到的日期對不上。
+        function localDateKey(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+
+        function jobDateKey(j) {
+            // 用來分組/排序的日期：優先 applyDate，沒有就退回 createdAt（Firestore Timestamp 要轉成 Date）
+            if (j.applyDate) return j.applyDate;
+            const ts = j.createdAt;
+            if (ts?.toDate) return localDateKey(ts.toDate());
+            return null;
+        }
+
         window.render = () => {
+            renderStatusPills();
+            renderOverviewDayChip();
             const list = document.getElementById('job-list');
             const search = document.getElementById('search-input').value.toLowerCase();
-            const filtered = allJobs.filter(j => (j.company + j.title + (j.notes||"")).toLowerCase().includes(search));
-            
+            const workStyle = document.getElementById('filter-workstyle').value;
+            const sortBy = document.getElementById('filter-sort').value;
+
+            let filtered = allJobs.filter(j => (j.company + j.title + (j.notes||"")).toLowerCase().includes(search));
+            if (activeStatusFilter) filtered = filtered.filter(j => j.status === activeStatusFilter);
+            if (workStyle) filtered = filtered.filter(j => j.type === workStyle);
+            if (selectedOverviewDay) filtered = filtered.filter(j => jobDateKey(j) === selectedOverviewDay);
+
+            filtered.sort((a, b) => {
+                if (sortBy === 'score_desc') return (b.score || 0) - (a.score || 0);
+                if (sortBy === 'score_asc') return (a.score || 0) - (b.score || 0);
+                const ak = jobDateKey(a) || '', bk = jobDateKey(b) || '';
+                return sortBy === 'date_asc' ? ak.localeCompare(bk) : bk.localeCompare(ak);
+            });
+
             if (filtered.length === 0) {
-                list.innerHTML = `<div class="text-center py-20 text-slate-300 font-bold">目前沒有資料</div>`;
-                updateStats([]);
+                list.innerHTML = `<div class="text-center py-20 text-slate-300 font-bold">No records yet</div>`;
+                document.getElementById('job-pager').innerHTML = '';
                 return;
             }
 
-            list.innerHTML = filtered.map(j => `
+            const pageSize = 25;
+            const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+            if (currentPage > totalPages) currentPage = totalPages;
+            const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+            list.innerHTML = pageItems.map(j => `
                 <div onclick="openEdit('${j.id}')" class="job-row bg-white px-6 py-4 rounded-2xl shadow-sm border border-slate-100 cursor-pointer transition-all flex flex-col md:flex-row items-center gap-4">
                     <div class="flex md:flex-col items-center justify-center min-w-[60px] gap-1">
                         <span class="text-xl font-black text-indigo-600">${j.score || 0}</span>
@@ -520,7 +1041,7 @@
                         </p>
                     </div>
                     <div class="md:w-32 flex justify-center">
-                        <span class="text-[10px] font-bold px-4 py-1.5 rounded-full ${getStatusClass(j.status)}">${j.status}</span>
+                        <span class="text-[10px] font-bold px-4 py-1.5 rounded-full ${STATUS_COLORS[j.status] || STATUS_COLORS.not_applied}">${STATUS_LABELS[j.status] || j.status}</span>
                     </div>
                     <div class="flex items-center gap-4">
                         ${j.jobUrl ? `<a href="${j.jobUrl}" target="_blank" class="p-2 text-slate-300 hover:text-indigo-500" onclick="event.stopPropagation()">🔗</a>` : ''}
@@ -528,40 +1049,365 @@
                     </div>
                 </div>
             `).join('');
-            updateStats(allJobs);
+
+            renderPager(document.getElementById('job-pager'), currentPage, totalPages, (p) => { currentPage = p; render(); });
         };
 
-        function getStatusClass(s) {
-            if (s === '已投遞') return 'bg-green-50 text-green-600 border-green-100';
-            if (s === '收到面試邀請') return 'bg-amber-50 text-amber-600 border-amber-100 animate-pulse';
-            if (s === '拒信') return 'bg-red-50 text-red-600 border-red-100';
-            if (s === '錄取') return 'bg-indigo-50 text-indigo-600 border-indigo-100 font-black';
-            return 'bg-slate-50 text-slate-400 border-slate-100';
+        window.setPage = (p) => { currentPage = p; render(); };
+
+        function renderPager(container, page, totalPages, onChange) {
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+            const pages = new Set([1, totalPages, page, page - 1, page + 1, page - 2, page + 2]);
+            const nums = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+            let html = `<button class="pager-btn" ${page === 1 ? 'disabled' : ''} data-p="1">&laquo;</button>`;
+            html += `<button class="pager-btn" ${page === 1 ? 'disabled' : ''} data-p="${page - 1}">&lsaquo;</button>`;
+            let prev = 0;
+            for (const n of nums) {
+                if (prev && n - prev > 1) html += `<span class="pager-btn" style="cursor:default;">&hellip;</span>`;
+                html += `<button class="pager-btn ${n === page ? 'active' : ''}" data-p="${n}">${n}</button>`;
+                prev = n;
+            }
+            html += `<button class="pager-btn" ${page === totalPages ? 'disabled' : ''} data-p="${page + 1}">&rsaquo;</button>`;
+            html += `<button class="pager-btn" ${page === totalPages ? 'disabled' : ''} data-p="${totalPages}">&raquo;</button>`;
+            container.innerHTML = html;
+            container.querySelectorAll('button[data-p]').forEach(btn => {
+                btn.onclick = () => onChange(parseInt(btn.dataset.p, 10));
+            });
         }
 
-        function updateStats(jobs) {
-            const container = document.getElementById('stats-container');
-            const stats = [
-                { label: "總數", val: jobs.length, color: "text-slate-800" },
-                { label: "面試", val: jobs.filter(j => j.status === '收到面試邀請').length, color: "text-amber-500" },
-                { label: "已投遞", val: jobs.filter(j => j.status !== '未投遞').length, color: "text-indigo-600" },
-                { label: "錄取", val: jobs.filter(j => j.status === '錄取').length, color: "text-green-600" }
-            ];
-            container.innerHTML = stats.map(s => `
-                <div class="glass p-6 rounded-[2rem] text-center shadow-sm">
-                    <p class="text-[10px] font-black text-slate-400 uppercase mb-1">${s.label}</p>
-                    <div class="text-3xl font-black ${s.color}">${s.val}</div>
-                </div>`).join('');
+        function renderStatusPills() {
+            const container = document.getElementById('status-pills');
+            const counts = {};
+            STATUS_VALUES.forEach(s => counts[s] = 0);
+            allJobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
+            const pills = [{ value: null, label: 'All', count: allJobs.length }, ...STATUS_VALUES.map(s => ({ value: s, label: STATUS_LABELS[s], count: counts[s] }))];
+            container.innerHTML = pills.map(p => `
+                <button onclick="setStatusFilter(${p.value ? `'${p.value}'` : 'null'})" class="status-pill ${activeStatusFilter === p.value ? 'active' : ''}">${p.label} &middot; ${p.count}</button>
+            `).join('');
         }
+
+        window.setStatusFilter = (s) => {
+            activeStatusFilter = activeStatusFilter === s ? null : s;
+            currentPage = 1;
+            render();
+        };
+
+        window.toggleFilterPanel = () => {
+            document.getElementById('filter-panel').classList.toggle('hidden');
+        };
+
+        let dashChartInstance = null;
+        let currentDashBuckets = [];
+
+        function getWeekStart() {
+            return localStorage.getItem('chloe_week_start') || 'monday';
+        }
+        window.setWeekStart = (v) => {
+            localStorage.setItem('chloe_week_start', v);
+            updateDashboard(allJobs);
+        };
+
+        // 這一週的週一（或週日，依 weekStart 設定）
+        function startOfWeek(date, weekStart) {
+            const d = new Date(date); d.setHours(0, 0, 0, 0);
+            const dow = d.getDay(); // 0=Sun..6=Sat
+            const diff = weekStart === 'sunday' ? dow : (dow + 6) % 7;
+            d.setDate(d.getDate() - diff);
+            return d;
+        }
+
+        function computeDayCounts(jobs) {
+            const counts = {};
+            jobs.forEach(j => {
+                const k = jobDateKey(j);
+                if (k) counts[k] = (counts[k] || 0) + 1;
+            });
+            return counts;
+        }
+
+        function buildWeekBuckets(jobs) {
+            const weekStart = getWeekStart();
+            const start = startOfWeek(overviewWeekAnchor, weekStart);
+            const todayKey = localDateKey(new Date());
+            const dayCounts = computeDayCounts(jobs);
+            const buckets = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(start); d.setDate(d.getDate() + i);
+                const key = localDateKey(d);
+                buckets.push({
+                    date: key,
+                    label: `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.getDate()}`,
+                    count: dayCounts[key] || 0,
+                    isToday: key === todayKey
+                });
+            }
+            return buckets;
+        }
+
+        function buildMonthHeatmap(jobs) {
+            const weekStart = getWeekStart();
+            const year = overviewMonthAnchor.getFullYear(), month = overviewMonthAnchor.getMonth();
+            const gridStart = startOfWeek(new Date(year, month, 1), weekStart);
+            const todayKey = localDateKey(new Date());
+            const dayCounts = computeDayCounts(jobs);
+            const days = [];
+            for (let i = 0; i < 42; i++) {
+                const d = new Date(gridStart); d.setDate(d.getDate() + i);
+                const key = localDateKey(d);
+                days.push({ date: key, day: d.getDate(), inMonth: d.getMonth() === month, count: dayCounts[key] || 0, isToday: key === todayKey });
+            }
+            return days;
+        }
+
+        function overviewPeriodLabel() {
+            if (dashPeriod === 'week') {
+                const weekStart = getWeekStart();
+                const start = startOfWeek(overviewWeekAnchor, weekStart);
+                const end = new Date(start); end.setDate(end.getDate() + 6);
+                const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                return `${fmt(start)} – ${fmt(end)}`;
+            }
+            return overviewMonthAnchor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        }
+
+        window.navigateOverviewPeriod = (dir) => {
+            if (dashPeriod === 'week') {
+                overviewWeekAnchor = new Date(overviewWeekAnchor);
+                overviewWeekAnchor.setDate(overviewWeekAnchor.getDate() + dir * 7);
+            } else {
+                overviewMonthAnchor = new Date(overviewMonthAnchor.getFullYear(), overviewMonthAnchor.getMonth() + dir, 1);
+            }
+            selectedOverviewDay = null;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        window.jumpToToday = () => {
+            overviewWeekAnchor = new Date();
+            overviewMonthAnchor = new Date();
+            selectedOverviewDay = null;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        window.setDashPeriod = (p) => {
+            dashPeriod = p;
+            selectedOverviewDay = null;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        window.selectOverviewDay = (date) => {
+            selectedOverviewDay = selectedOverviewDay === date ? null : date;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        window.clearOverviewDay = () => {
+            selectedOverviewDay = null;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        function renderWeekChart(jobs) {
+            const buckets = buildWeekBuckets(jobs);
+            currentDashBuckets = buckets;
+            const labels = buckets.map(b => b.label);
+            const data = buckets.map(b => b.count);
+            const colors = buckets.map(b => {
+                if (selectedOverviewDay === b.date) return '#3730a3';
+                if (b.isToday) return '#6366f1';
+                return '#c7d2fe';
+            });
+
+            // 更新既有 Chart 實例而不是每次都 destroy+recreate：避免帳號切換時
+            // 舊/新 onSnapshot callback 幾乎同時各呼叫一次 updateDashboard()，兩邊同時
+            // destroy/new 同一個 canvas 導致 Chart.js 內部狀態壞掉（canvas context 變 null）。
+            if (dashChartInstance) {
+                dashChartInstance.data.labels = labels;
+                dashChartInstance.data.datasets[0].data = data;
+                dashChartInstance.data.datasets[0].backgroundColor = colors;
+                dashChartInstance.update();
+            } else {
+                const ctx = document.getElementById('dash-chart');
+                dashChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 6 }] },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.parsed.y} application${c.parsed.y === 1 ? '' : 's'}` } } },
+                        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                        onClick: (evt, elements) => {
+                            if (!elements.length) return;
+                            const b = currentDashBuckets[elements[0].index];
+                            if (!b) return;
+                            window.selectOverviewDay(b.date);
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderMonthHeatmap(jobs) {
+            const days = buildMonthHeatmap(jobs);
+            const maxCount = Math.max(1, ...days.map(d => d.count));
+            const weekdayLabels = getWeekStart() === 'sunday' ? ['S', 'M', 'T', 'W', 'T', 'F', 'S'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+            const cellsHtml = days.map(d => {
+                if (!d.inMonth) {
+                    return `<div class="w-9 h-9 flex items-center justify-center rounded-lg text-[11px] text-slate-300">${d.day}</div>`;
+                }
+                const selected = selectedOverviewDay === d.date;
+                const ring = selected ? 'ring-2 ring-offset-1 ring-indigo-900' : (d.isToday ? 'ring-2 ring-offset-1 ring-indigo-500' : '');
+                return `<button onclick="selectOverviewDay('${d.date}')" class="w-9 h-9 flex items-center justify-center rounded-lg text-[11px] border ${HEAT_CLASSES[heatLevel(d.count, maxCount)]} ${ring} ${d.isToday ? 'font-black' : 'font-bold'} transition-transform hover:scale-105" title="${d.count} application${d.count === 1 ? '' : 's'}">${d.day}</button>`;
+            }).join('');
+            document.getElementById('dash-calendar').innerHTML = `
+                <div class="mx-auto" style="width: max-content;">
+                    <div class="grid gap-1 mb-1" style="grid-template-columns: repeat(7, 2.25rem);">
+                        ${weekdayLabels.map(w => `<div class="w-9 text-center text-[10px] font-black text-slate-400 uppercase">${w}</div>`).join('')}
+                    </div>
+                    <div class="grid gap-1" style="grid-template-columns: repeat(7, 2.25rem);">${cellsHtml}</div>
+                </div>`;
+        }
+
+        function renderOverviewDayChip() {
+            const el = document.getElementById('overview-day-chip');
+            if (!selectedOverviewDay) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+            const label = new Date(selectedOverviewDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+            el.classList.remove('hidden');
+            el.innerHTML = `<button onclick="clearOverviewDay()" class="status-pill active">Day: ${label} &nbsp;&#10005;</button>`;
+        }
+
+        function updateDashboard(jobs) {
+            document.getElementById('dash-tab-week').className = `px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors ${dashPeriod === 'week' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`;
+            document.getElementById('dash-tab-month').className = `px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors ${dashPeriod === 'month' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`;
+            const weekStart = getWeekStart();
+            document.getElementById('week-start-mon').className = `px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors ${weekStart === 'monday' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-400'}`;
+            document.getElementById('week-start-sun').className = `px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors ${weekStart === 'sunday' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-400'}`;
+
+            const cards = [{ value: null, label: 'Total', count: jobs.length, color: 'text-slate-800' }]
+                .concat(STATUS_VALUES.map(s => ({ value: s, label: STATUS_LABELS[s], count: jobs.filter(j => j.status === s).length, color: 'text-indigo-600' })));
+            document.getElementById('stats-container').innerHTML = cards.map(c => `
+                <div onclick="setStatusFilter(${c.value ? `'${c.value}'` : 'null'})" class="dash-card glass p-3 rounded-xl text-center shadow-sm ${activeStatusFilter === c.value ? 'active' : ''}">
+                    <p class="text-[9px] font-black text-slate-400 uppercase mb-0.5 truncate">${c.label}</p>
+                    <div class="text-lg font-black ${c.color}">${c.count}</div>
+                </div>`).join('');
+
+            document.getElementById('overview-period-label').textContent = overviewPeriodLabel();
+            // Month 熱力圖格子小，卡片跟著縮窄置中，不然寬版卡片裡小月曆兩側會留一大片空白
+            document.getElementById('dash-period-card').style.maxWidth = dashPeriod === 'week' ? '640px' : '420px';
+
+            const chartWrap = document.getElementById('dash-chart-wrap');
+            const calendarWrap = document.getElementById('dash-calendar');
+            if (dashPeriod === 'week') {
+                chartWrap.classList.remove('hidden');
+                calendarWrap.classList.add('hidden');
+                renderWeekChart(jobs);
+            } else {
+                chartWrap.classList.add('hidden');
+                calendarWrap.classList.remove('hidden');
+                renderMonthHeatmap(jobs);
+            }
+
+            renderUpcomingInterviews(jobs);
+        }
+
+        // 切換 Jobs／Overview／Network 三個頁面。Add Job／Profile／Resumes 等其他彈窗不受影響。
+        window.showView = (v) => {
+            const leavingOverview = currentView === 'overview' && v !== 'overview';
+            currentView = v;
+            networkManagerOpen = (v === 'network');
+
+            document.getElementById('overview-dashboard').classList.toggle('hidden', v !== 'overview');
+            document.getElementById('network-page').classList.toggle('hidden', v !== 'network');
+            document.getElementById('jobs-list-section').classList.toggle('hidden', v === 'network');
+
+            const navClass = (id, active) => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('active-view', active);
+            };
+            navClass('nav-jobs', v === 'jobs');
+            navClass('nav-overview', v === 'overview');
+            navClass('nav-network', v === 'network');
+
+            if (v === 'overview') {
+                overviewWeekAnchor = new Date();
+                overviewMonthAnchor = new Date();
+                selectedOverviewDay = null;
+                dashPeriod = 'week';
+                updateDashboard(allJobs);
+                render();
+            } else if (v === 'network') {
+                document.getElementById('network-list-view').classList.remove('hidden');
+                document.getElementById('network-form-view').classList.add('hidden');
+                renderNetworkList();
+            }
+
+            if (leavingOverview) {
+                selectedOverviewDay = null;
+                render();
+            }
+
+            window.scrollTo(0, 0);
+        };
+
+        window.openOverview = () => showView('overview');
+        window.closeOverview = () => showView('jobs');
+
+        function renderUpcomingInterviews(jobs) {
+            const el = document.getElementById('upcoming-interviews');
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + 30);
+            const upcoming = jobs
+                .filter(j => j.status === 'interview' && j.nextInterviewDate)
+                .map(j => ({ j, d: new Date(j.nextInterviewDate + 'T00:00:00') }))
+                .filter(x => x.d >= today && x.d <= cutoff)
+                .sort((a, b) => a.d - b.d);
+            if (!upcoming.length) { el.innerHTML = ''; return; }
+            el.innerHTML = `
+                <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">Upcoming Interviews</h3>
+                <div class="flex flex-col gap-2">
+                    ${upcoming.map(({ j, d }) => `
+                        <button onclick="openEdit('${j.id}')" class="w-full text-left flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors">
+                            <div>
+                                <p class="font-bold text-sm text-slate-700">${escapeHtml(j.title || '')} <span class="font-normal text-slate-400">&middot; ${escapeHtml(j.company || '')}</span></p>
+                                ${j.interviewStage ? `<p class="text-[10px] text-indigo-500 font-bold">${escapeHtml(j.interviewStage)}</p>` : ''}
+                            </div>
+                            <span class="text-xs font-black text-slate-500">${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                        </button>`).join('')}
+                </div>`;
+        }
+
+        function ensureSelectHasValue(selectId, value) {
+            // Work Style 從自由輸入改成固定選單後，舊資料若不在三個選項內，插入一個「目前值」選項，不悄悄清掉資料
+            if (!value) return;
+            const sel = document.getElementById(selectId);
+            if (![...sel.options].some(o => o.value === value)) {
+                const opt = document.createElement('option');
+                opt.value = value; opt.textContent = value;
+                sel.appendChild(opt);
+            }
+        }
+
+        function toggleAISection(show) {
+            document.getElementById('modal-ai-section').classList.toggle('hidden', !show);
+        }
+
+        window.toggleInterviewFields = () => {
+            const show = document.getElementById('in-status').value === 'interview';
+            document.getElementById('interview-fields-wrap').style.display = show ? 'contents' : 'none';
+        };
 
         window.openModal = () => {
             document.getElementById('in-id').value = "";
-            document.getElementById('modal-title').innerText = "新增應徵紀錄";
-            document.querySelectorAll('#modal input, #modal textarea').forEach(i => i.value = "");
-            document.getElementById('in-status').value = "未投遞";
+            document.getElementById('modal-title').innerText = "New Application";
+            document.querySelectorAll('#modal input, #modal textarea, #modal select').forEach(i => i.value = "");
+            document.getElementById('in-status').value = "not_applied";
             document.getElementById('in-resume-tag').value = "";
             document.getElementById('in-easy-apply').checked = false;
             document.getElementById('btn-delete').classList.add('hidden');
+            document.getElementById('modal-ai-result').innerHTML = "";
+            toggleAISection(true);
+            toggleInterviewFields();
             renderAttachments(null);
             updateApplyUI(null);
             document.getElementById('modal').classList.replace('hidden', 'flex');
@@ -571,20 +1417,30 @@
             const j = allJobs.find(x => x.id === id);
             if (!j) return;
             document.getElementById('in-id').value = id;
-            document.getElementById('modal-title').innerText = "修改職位詳情";
+            document.getElementById('modal-title').innerText = "Edit Job Details";
             document.getElementById('in-title').value = j.title || "";
             document.getElementById('in-company').value = j.company || "";
             document.getElementById('in-category').value = j.category || "";
+            ensureSelectHasValue('in-type', j.type);
             document.getElementById('in-type').value = j.type || "";
-            document.getElementById('in-status').value = j.status || "未投遞";
+            document.getElementById('in-state').value = j.state || "";
+            document.getElementById('in-city').value = j.city || "";
+            document.getElementById('in-status').value = normalizeStatus(j.status) || "not_applied";
+            document.getElementById('in-apply-date').value = j.applyDate || "";
+            document.getElementById('in-channel').value = j.channel || "";
+            document.getElementById('in-interview-stage').value = j.interviewStage || "";
+            document.getElementById('in-next-interview-date').value = j.nextInterviewDate || "";
             document.getElementById('in-score').value = j.score || 0;
             document.getElementById('in-salary').value = j.salary || "";
             document.getElementById('in-job-url').value = j.jobUrl || "";
             document.getElementById('in-network').value = j.network || "";
             document.getElementById('in-notes').value = j.notes || "";
             document.getElementById('in-resume-tag').value = j.resumeTag || "";
+            document.getElementById('in-linked-contact').value = j.linkedContactId || "";
             document.getElementById('in-easy-apply').checked = !!j.easyApply;
             document.getElementById('btn-delete').classList.remove('hidden');
+            toggleAISection(false);
+            toggleInterviewFields();
             renderAttachments(j);
             updateApplyUI(j);
             document.getElementById('modal').classList.replace('hidden', 'flex');
@@ -605,8 +1461,8 @@
             section.classList.remove('hidden');
             list.innerHTML = files.map((f, i) => `
                 <button onclick="downloadAttachment(${i})" class="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:border-indigo-300 transition-colors text-left">
-                    <span>📄 ${f.name}</span>
-                    <span class="text-indigo-500">下載</span>
+                    <span>${f.name}</span>
+                    <span class="text-indigo-500">Download</span>
                 </button>`).join('');
             window._currentAttachments = files;
         }
@@ -640,8 +1496,9 @@
             const url = document.getElementById('in-job-url').value;
             if (!url) return;
             window.open(url, '_blank');
-            if (confirm("是否標記為已投遞？")) {
-                document.getElementById('in-status').value = "已投遞";
+            if (confirm("Mark this as applied?")) {
+                document.getElementById('in-status').value = "applied";
+                toggleInterviewFields();
                 saveJob();
             }
         };
@@ -660,20 +1517,21 @@
             const p = pendingImport;
             pendingImport = null;
             if (allJobs.some(j => j.jobUrl && p.jobUrl && j.jobUrl === p.jobUrl)) {
-                showToast(`已略過：「${p.title || p.jobUrl}」的網址已在清單中`);
+                showToast(`Skipped: the URL for "${p.title || p.jobUrl}" is already in your list`);
                 return;
             }
             const data = {
                 title: p.title || "", company: p.company || "", category: p.category || "",
-                type: p.type || "", status: "未投遞", score: parseFloat(p.score) || 0,
+                type: p.type || "", state: "", city: "", status: "not_applied", applyDate: "",
+                channel: "", interviewStage: "", nextInterviewDate: "", score: parseFloat(p.score) || 0,
                 salary: p.salary || "", jobUrl: p.jobUrl || "", network: "",
                 notes: p.notes || "", resumeTag: p.resumeTag || "", easyApply: !!p.easyApply,
                 createdAt: serverTimestamp(), updatedAt: serverTimestamp()
             };
             try {
                 await addDoc(collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs'), data);
-                showToast(`已匯入：${p.title || p.jobUrl}`);
-            } catch (e) { console.error('匯入失敗', e); showToast('匯入失敗：' + e.message, true); }
+                showToast(`Imported: ${p.title || p.jobUrl}`);
+            } catch (e) { console.error('匯入失敗', e); showToast('Import failed: ' + e.message, true); }
         }
 
         // Chrome extension 在 Career Hub 已開啟時直接呼叫，不需要重新載入或開新分頁
@@ -683,18 +1541,737 @@
             return true;
         };
 
+        function renderResumeTagOptions() {
+            const sel = document.getElementById('in-resume-tag');
+            const cur = sel.value;
+            sel.innerHTML = '<option value="">-- Not set --</option>' +
+                userResumes.map(r => `<option value="${escapeHtml(r.tag)}">${escapeHtml(r.tag)}</option>`).join('');
+            sel.value = userResumes.some(r => r.tag === cur) ? cur : '';
+        }
+
+        function renderResumeManager() {
+            const list = document.getElementById('resume-list');
+            if (!userResumes.length) {
+                list.innerHTML = `<div class="text-center py-8 text-slate-300 font-bold text-sm">
+                    No resumes yet
+                    <button onclick="importLegacyLibrary()" class="block mx-auto mt-3 text-xs font-bold text-indigo-500 hover:text-indigo-700 transition-colors">Import from legacy library</button>
+                </div>`;
+                return;
+            }
+            list.innerHTML = userResumes.map(r => `
+                <button onclick="openResumeDetail('${r.id}')" class="w-full text-left flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors">
+                    <p class="font-bold text-sm text-slate-700">${escapeHtml(r.tag)}</p>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-slate-300 shrink-0"><path d="M9 6l6 6-6 6"/></svg>
+                </button>`).join('');
+        }
+
+        function showResumeListView() {
+            document.getElementById('resume-list-view').classList.remove('hidden');
+            document.getElementById('resume-detail-view').classList.add('hidden');
+        }
+
+        function showResumeDetailView() {
+            document.getElementById('resume-list-view').classList.add('hidden');
+            document.getElementById('resume-detail-view').classList.remove('hidden');
+        }
+
+        function enterResumeEditMode(focusTag) {
+            document.getElementById('resume-detail-title').classList.add('hidden');
+            document.getElementById('in-resume-edit-tag').classList.remove('hidden');
+            document.getElementById('resume-detail-text-readonly').classList.add('hidden');
+            document.getElementById('in-resume-edit-text').classList.remove('hidden');
+            document.getElementById('resume-save-btn').classList.remove('hidden');
+            document.getElementById('resume-edit-btn').classList.add('hidden');
+            if (focusTag) document.getElementById('in-resume-edit-tag').focus();
+        }
+
+        function exitResumeEditMode() {
+            document.getElementById('resume-detail-title').classList.remove('hidden');
+            document.getElementById('in-resume-edit-tag').classList.add('hidden');
+            document.getElementById('resume-detail-text-readonly').classList.remove('hidden');
+            document.getElementById('in-resume-edit-text').classList.add('hidden');
+            document.getElementById('resume-save-btn').classList.add('hidden');
+            document.getElementById('resume-edit-btn').classList.remove('hidden');
+        }
+
+        window.openResumeManager = () => {
+            resumeManagerOpen = true;
+            showResumeListView();
+            renderResumeManager();
+            document.getElementById('resume-modal').classList.replace('hidden', 'flex');
+        };
+
+        window.closeResumeManager = () => {
+            resumeManagerOpen = false;
+            document.getElementById('resume-modal').classList.replace('flex', 'hidden');
+        };
+
+        window.backToResumeList = () => {
+            showResumeListView();
+            renderResumeManager();
+        };
+
+        // 從清單點進一份既有履歷：唯讀 detail 視圖，點 Edit 才能改
+        window.openResumeDetail = (id) => {
+            const r = userResumes.find(x => x.id === id);
+            if (!r) return;
+            document.getElementById('in-resume-edit-id').value = id;
+            document.getElementById('in-resume-edit-tag').value = r.tag || "";
+            document.getElementById('in-resume-edit-text').value = r.text || "";
+            document.getElementById('resume-detail-title').textContent = r.tag || "";
+            document.getElementById('resume-detail-text-readonly').textContent = r.text || "";
+            exitResumeEditMode();
+            showResumeDetailView();
+        };
+
+        // 新增履歷：直接進入空白的 detail 編輯模式
+        window.openNewResume = () => {
+            document.getElementById('in-resume-edit-id').value = "";
+            document.getElementById('in-resume-edit-tag').value = "";
+            document.getElementById('in-resume-edit-text').value = "";
+            document.getElementById('resume-detail-title').textContent = "";
+            document.getElementById('resume-detail-text-readonly').textContent = "";
+            enterResumeEditMode(true);
+            showResumeDetailView();
+        };
+
+        window.startEditResume = () => enterResumeEditMode(false);
+
+        window.saveResume = async () => {
+            if (!currentUser) return;
+            const tag = document.getElementById('in-resume-edit-tag').value.trim();
+            const text = document.getElementById('in-resume-edit-text').value.trim();
+            if (!tag || !text) { showToast('Resume name and full text are both required', true); return; }
+            const id = document.getElementById('in-resume-edit-id').value;
+            const resumesCol = collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'resumes');
+            try {
+                if (id) {
+                    await updateDoc(doc(resumesCol, id), { tag, text, updatedAt: serverTimestamp() });
+                } else {
+                    const ref = await addDoc(resumesCol, { tag, text, updatedAt: serverTimestamp() });
+                    document.getElementById('in-resume-edit-id').value = ref.id;
+                }
+                document.getElementById('resume-detail-title').textContent = tag;
+                document.getElementById('resume-detail-text-readonly').textContent = text;
+                exitResumeEditMode();
+                showToast('Resume saved');
+            } catch (e) { console.error(e); showToast('Save failed: ' + e.message, true); }
+        };
+
+        window.deleteResume = async () => {
+            if (!currentUser) return;
+            const id = document.getElementById('in-resume-edit-id').value;
+            if (!id) { window.backToResumeList(); return; }
+            if (!confirm('Delete this resume?')) return;
+            try {
+                await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'resumes', id));
+                showToast('Deleted');
+                window.backToResumeList();
+            } catch (e) { console.error(e); showToast('Delete failed: ' + e.message, true); }
+        };
+
+        // 一次性遷移：把舊版全站共用的靜態履歷庫，複製進目前登入帳號自己的 Firestore 履歷庫
+        window.importLegacyLibrary = async () => {
+            if (!currentUser) return;
+            try {
+                const lib = await fetch('resume-templates/resume-library.json').then(r => r.json());
+                const resumesCol = collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'resumes');
+                for (const [tag, text] of Object.entries(lib)) {
+                    await addDoc(resumesCol, { tag, text, updatedAt: serverTimestamp() });
+                }
+                showToast(`Imported ${Object.keys(lib).length} resumes`);
+            } catch (e) { console.error(e); showToast('Import failed: ' + e.message, true); }
+        };
+
+        // ===== Network（聯絡人追蹤）=====
+        const CONTACT_STATUS_COLORS = {
+            not_contacted: 'bg-slate-50 text-slate-400 border-slate-100',
+            contacted: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+            replied: 'bg-amber-50 text-amber-600 border-amber-100',
+            connected: 'bg-green-50 text-green-600 border-green-100'
+        };
+
+        function renderContactJobOptions() {
+            const sel = document.getElementById('in-contact-job');
+            const cur = sel.value;
+            sel.innerHTML = '<option value="">-- None --</option>' +
+                allJobs.map(j => `<option value="${j.id}">${escapeHtml(j.company || '')} – ${escapeHtml(j.title || '')}</option>`).join('');
+            sel.value = allJobs.some(j => j.id === cur) ? cur : '';
+        }
+
+        // Job Modal 的「Network Contact」下拉：跟上面 renderContactJobOptions() 是反方向的關聯，各自獨立維護
+        function renderJobContactOptions() {
+            const sel = document.getElementById('in-linked-contact');
+            if (!sel) return;
+            const cur = sel.value;
+            sel.innerHTML = '<option value="">-- None --</option>' +
+                userContacts.map(c => {
+                    const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.preferredName || 'Unnamed';
+                    const label = c.company ? `${name} – ${c.company}` : name;
+                    return `<option value="${c.id}">${escapeHtml(label)}</option>`;
+                }).join('');
+            sel.value = userContacts.some(c => c.id === cur) ? cur : '';
+        }
+
+        function renderNetworkList() {
+            const list = document.getElementById('network-list');
+            if (!userContacts.length) {
+                list.innerHTML = `<div class="text-center py-8 text-slate-300 font-bold text-sm">No contacts yet</div>`;
+                return;
+            }
+            const groups = {};
+            userContacts.forEach(c => { (groups[c.company || 'No Company'] = groups[c.company || 'No Company'] || []).push(c); });
+            const companies = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+            list.innerHTML = companies.map(company => `
+                <div>
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">${escapeHtml(company)}</h3>
+                    <div class="flex flex-col gap-2">
+                        ${groups[company].map(c => {
+                            const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.preferredName || 'Unnamed';
+                            const statusClass = CONTACT_STATUS_COLORS[c.contactStatus] || CONTACT_STATUS_COLORS.not_contacted;
+                            return `
+                            <div class="flex items-start gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200">
+                                <div class="entry-tile bg-indigo-50 text-indigo-500">${escapeHtml((name || '?').charAt(0).toUpperCase())}</div>
+                                <div class="min-w-0 flex-1 cursor-pointer" onclick="openContactForm('${c.id}')">
+                                    <p class="font-bold text-sm text-slate-700">${escapeHtml(name)}${c.title ? ` <span class="font-normal text-slate-400">&middot; ${escapeHtml(c.title)}</span>` : ''}</p>
+                                    <div class="flex items-center gap-2 mt-1 flex-wrap">
+                                        <span class="text-[9px] font-black px-2 py-0.5 rounded-full border ${statusClass} uppercase">${CONTACT_STATUS_LABELS[c.contactStatus] || 'Not Contacted'}</span>
+                                        ${c.nextFollowUpDate ? `<span class="text-[10px] text-slate-400">Follow up ${escapeHtml(c.nextFollowUpDate)}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 shrink-0">
+                                    <button onclick="openContactForm('${c.id}')" class="icon-btn" title="Edit">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M4 20l1-4L16 5l3 3L8 19l-4 1z"/><path d="M14 7l3 3"/></svg>
+                                    </button>
+                                    <button onclick="quickDeleteContact('${c.id}')" class="icon-btn danger" title="Delete">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+                                    </button>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`).join('');
+        }
+
+        window.openNetworkManager = () => showView('network');
+        window.closeNetworkManager = () => showView('jobs');
+
+        window.backToNetworkList = () => {
+            document.getElementById('network-list-view').classList.remove('hidden');
+            document.getElementById('network-form-view').classList.add('hidden');
+            renderNetworkList();
+        };
+
+        function openContactFormView() {
+            document.getElementById('network-list-view').classList.add('hidden');
+            document.getElementById('network-form-view').classList.remove('hidden');
+            renderContactJobOptions();
+        }
+
+        window.openNewContact = () => {
+            document.getElementById('in-contact-id').value = '';
+            document.getElementById('contact-form-title').textContent = 'New Contact';
+            document.getElementById('network-delete-btn').classList.add('hidden');
+            ['first', 'last', 'preferred', 'email', 'linkedin', 'phone', 'company', 'title', 'last-contacted', 'next-followup', 'notes'].forEach(k => {
+                document.getElementById(`in-contact-${k}`).value = '';
+            });
+            document.getElementById('in-contact-status').value = 'not_contacted';
+            openContactFormView();
+            document.getElementById('in-contact-job').value = '';
+        };
+
+        window.openContactForm = (id) => {
+            const c = userContacts.find(x => x.id === id);
+            if (!c) return;
+            document.getElementById('in-contact-id').value = id;
+            document.getElementById('contact-form-title').textContent = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Edit Contact';
+            document.getElementById('network-delete-btn').classList.remove('hidden');
+            document.getElementById('in-contact-first').value = c.firstName || '';
+            document.getElementById('in-contact-last').value = c.lastName || '';
+            document.getElementById('in-contact-preferred').value = c.preferredName || '';
+            document.getElementById('in-contact-email').value = c.email || '';
+            document.getElementById('in-contact-linkedin').value = c.linkedin || '';
+            document.getElementById('in-contact-phone').value = c.phone || '';
+            document.getElementById('in-contact-company').value = c.company || '';
+            document.getElementById('in-contact-title').value = c.title || '';
+            document.getElementById('in-contact-status').value = c.contactStatus || 'not_contacted';
+            document.getElementById('in-contact-last-contacted').value = c.lastContactedDate || '';
+            document.getElementById('in-contact-next-followup').value = c.nextFollowUpDate || '';
+            document.getElementById('in-contact-notes').value = c.notes || '';
+            openContactFormView();
+            document.getElementById('in-contact-job').value = c.linkedJobId || '';
+        };
+
+        window.saveContact = async () => {
+            if (!currentUser) return;
+            const firstName = document.getElementById('in-contact-first').value.trim();
+            const lastName = document.getElementById('in-contact-last').value.trim();
+            const company = document.getElementById('in-contact-company').value.trim();
+            if (!firstName && !lastName && !company) { showToast('Enter at least a name or company', true); return; }
+            const data = {
+                firstName, lastName,
+                preferredName: document.getElementById('in-contact-preferred').value.trim(),
+                email: document.getElementById('in-contact-email').value.trim(),
+                linkedin: document.getElementById('in-contact-linkedin').value.trim(),
+                phone: document.getElementById('in-contact-phone').value.trim(),
+                company,
+                title: document.getElementById('in-contact-title').value.trim(),
+                linkedJobId: document.getElementById('in-contact-job').value,
+                contactStatus: document.getElementById('in-contact-status').value,
+                lastContactedDate: document.getElementById('in-contact-last-contacted').value,
+                nextFollowUpDate: document.getElementById('in-contact-next-followup').value,
+                notes: document.getElementById('in-contact-notes').value,
+                updatedAt: serverTimestamp()
+            };
+            const id = document.getElementById('in-contact-id').value;
+            try {
+                const contactsCol = collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'contacts');
+                if (id) await updateDoc(doc(contactsCol, id), data);
+                else await addDoc(contactsCol, { ...data, createdAt: serverTimestamp() });
+                showToast('Contact saved');
+                window.backToNetworkList();
+            } catch (e) { console.error(e); showToast('Save failed: ' + e.message, true); }
+        };
+
+        window.deleteContact = async () => {
+            if (!currentUser) return;
+            const id = document.getElementById('in-contact-id').value;
+            if (!id) { window.backToNetworkList(); return; }
+            if (!confirm('Delete this contact?')) return;
+            try {
+                await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'contacts', id));
+                showToast('Deleted');
+                window.backToNetworkList();
+            } catch (e) { console.error(e); showToast('Delete failed: ' + e.message, true); }
+        };
+
+        window.quickDeleteContact = async (id) => {
+            if (!currentUser) return;
+            if (!confirm('Delete this contact?')) return;
+            try {
+                await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'contacts', id));
+                showToast('Deleted');
+            } catch (e) { console.error(e); showToast('Delete failed: ' + e.message, true); }
+        };
+
+        function profileRef() {
+            return doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'profile', 'main');
+        }
+
+        function profileHasAnyData(p) {
+            if (!p) return false;
+            return !!(p.fullName || p.email || p.phone ||
+                p.experience?.length || p.education?.length || p.languages?.length || p.courses?.length ||
+                p.organizations?.length || p.projects?.length);
+        }
+
+        function isProfileComplete(p) {
+            return !!(p.fullName && p.email && p.phone && p.experience?.length && p.education?.length);
+        }
+
+        function entryRowHtml(section, e) {
+            let title = '', subtitle = '';
+            if (section === 'experience') {
+                title = e.title || '';
+                subtitle = [e.company, e.type, [e.startDate, e.endDate].filter(Boolean).join(' - ')].filter(Boolean).join(' · ');
+            } else if (section === 'education') {
+                title = e.degree || '';
+                subtitle = [e.school, e.department].filter(Boolean).join(' · ') + (e.status ? ` · ${e.status}` : '');
+            } else if (section === 'languages') {
+                title = e.language || '';
+                subtitle = e.proficiency || '';
+            } else if (section === 'organizations') {
+                title = e.role || '';
+                subtitle = [e.org, [e.startDate, e.endDate].filter(Boolean).join(' - ')].filter(Boolean).join(' · ');
+            } else if (section === 'projects') {
+                title = e.title || '';
+                subtitle = e.type || '';
+            }
+            const initial = (title || subtitle || '?').trim().charAt(0).toUpperCase() || '?';
+            return `
+                <div class="flex items-start gap-3 bg-white px-4 py-3 rounded-xl border border-slate-200">
+                    <div class="entry-tile bg-indigo-50 text-indigo-500">${escapeHtml(initial)}</div>
+                    <div class="min-w-0 flex-1">
+                        <p class="font-bold text-sm text-slate-700">${escapeHtml(title)}</p>
+                        <p class="text-[10px] text-slate-400">${escapeHtml(subtitle)}</p>
+                        ${e.description ? `<p class="text-xs text-slate-500 mt-1 whitespace-pre-wrap">${escapeHtml(e.description)}</p>` : ''}
+                        ${section === 'education' && e.primary ? `<span class="inline-block mt-1 text-[9px] font-black px-2 py-0.5 bg-indigo-100 text-indigo-500 rounded uppercase">Primary</span>` : ''}
+                    </div>
+                    <div class="flex gap-2 shrink-0">
+                        <button onclick="editEntry('${section}','${e.id}')" class="icon-btn" title="Edit">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M4 20l1-4L16 5l3 3L8 19l-4 1z"/><path d="M14 7l3 3"/></svg>
+                        </button>
+                        <button onclick="deleteEntry('${section}','${e.id}')" class="icon-btn danger" title="Delete">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+                        </button>
+                    </div>
+                </div>`;
+        }
+
+        function renderProfile() {
+            document.getElementById('in-profile-name').value = userProfile.fullName || '';
+            document.getElementById('in-profile-email').value = userProfile.email || '';
+            document.getElementById('in-profile-phone').value = userProfile.phone || '';
+            document.getElementById('courses-input').value = (userProfile.courses || []).join(', ');
+            document.getElementById('courses-chips').innerHTML = (userProfile.courses || [])
+                .map(c => `<span class="text-[10px] font-bold px-3 py-1 bg-slate-100 text-slate-500 rounded-full">${escapeHtml(c)}</span>`).join('');
+
+            ['experience', 'education', 'languages', 'organizations', 'projects'].forEach(section => {
+                const list = document.getElementById(`profile-${section}-list`);
+                const items = userProfile[section] || [];
+                list.innerHTML = items.length
+                    ? items.map(e => entryRowHtml(section, e)).join('')
+                    : `<p class="text-xs text-slate-300 italic">No entries yet</p>`;
+            });
+
+            document.getElementById('profile-incomplete-banner').classList.toggle('hidden', isProfileComplete(userProfile));
+        }
+
+        window.openProfile = () => {
+            profileModalOpen = true;
+            closeEntryForm();
+            renderProfile();
+            document.getElementById('profile-modal').classList.replace('hidden', 'flex');
+        };
+
+        window.closeProfile = () => {
+            profileModalOpen = false;
+            closeEntryForm();
+            document.getElementById('profile-modal').classList.replace('flex', 'hidden');
+        };
+
+        window.saveProfileIdentity = async () => {
+            if (!currentUser) return;
+            const data = {
+                fullName: document.getElementById('in-profile-name').value.trim(),
+                email: document.getElementById('in-profile-email').value.trim(),
+                phone: document.getElementById('in-profile-phone').value.trim(),
+                updatedAt: serverTimestamp()
+            };
+            try {
+                await setDoc(profileRef(), data, { merge: true });
+                showToast('Basic info saved');
+            } catch (e) { console.error(e); showToast('Save failed: ' + e.message, true); }
+        };
+
+        window.saveCourses = async () => {
+            if (!currentUser) return;
+            const courses = document.getElementById('courses-input').value.split(/[、,]/).map(s => s.trim()).filter(Boolean);
+            try {
+                await setDoc(profileRef(), { courses, updatedAt: serverTimestamp() }, { merge: true });
+                showToast('Saved');
+            } catch (e) { console.error(e); showToast('Save failed: ' + e.message, true); }
+        };
+
+        function renderEntryFields(section, entry) {
+            const fields = ENTRY_FIELDS[section];
+            document.getElementById('entry-form-fields').innerHTML = fields.map(f => {
+                const val = entry[f.key];
+                if (f.type === 'checkbox') {
+                    return `<div class="flex items-center gap-2"><input type="checkbox" id="entry-field-${f.key}" class="w-4 h-4 rounded accent-indigo-500 cursor-pointer" ${val ? 'checked' : ''}><label for="entry-field-${f.key}" class="text-xs font-bold text-slate-500 cursor-pointer">${f.label}</label></div>`;
+                }
+                if (f.type === 'textarea') {
+                    return `<div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">${f.label}</label><textarea id="entry-field-${f.key}" rows="3" class="input-field text-xs">${escapeHtml(val || '')}</textarea></div>`;
+                }
+                if (f.type === 'select') {
+                    const opts = f.options.map(o => `<option value="${escapeHtml(o)}" ${val === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('');
+                    return `<div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">${f.label}</label><select id="entry-field-${f.key}" class="input-field cursor-pointer"><option value="">-- Select --</option>${opts}</select></div>`;
+                }
+                return `<div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">${f.label}</label><input id="entry-field-${f.key}" class="input-field" value="${escapeHtml(val || '')}"></div>`;
+            }).join('');
+        }
+
+        window.openEntryForm = (section) => {
+            currentEditSection = section;
+            document.getElementById('in-entry-id').value = '';
+            document.getElementById('entry-form-title').innerText = `Add ${SECTION_LABELS[section]}`;
+            document.getElementById('entry-form-remove').classList.add('hidden');
+            renderEntryFields(section, {});
+            document.getElementById('entry-modal').classList.replace('hidden', 'flex');
+        };
+
+        window.editEntry = (section, id) => {
+            const entry = (userProfile[section] || []).find(x => x.id === id);
+            if (!entry) return;
+            currentEditSection = section;
+            document.getElementById('in-entry-id').value = id;
+            document.getElementById('entry-form-title').innerText = `Edit ${SECTION_LABELS[section]}`;
+            document.getElementById('entry-form-remove').classList.remove('hidden');
+            renderEntryFields(section, entry);
+            document.getElementById('entry-modal').classList.replace('hidden', 'flex');
+        };
+
+        window.closeEntryForm = () => {
+            currentEditSection = null;
+            document.getElementById('in-entry-id').value = '';
+            document.getElementById('entry-form-title').innerText = 'New Entry';
+            document.getElementById('entry-form-remove').classList.add('hidden');
+            document.getElementById('entry-form-fields').innerHTML = '';
+            document.getElementById('entry-modal').classList.replace('flex', 'hidden');
+        };
+
+        window.saveEntry = async () => {
+            if (!currentUser || !currentEditSection) return;
+            const section = currentEditSection;
+            const entry = {};
+            ENTRY_FIELDS[section].forEach(f => {
+                const el = document.getElementById(`entry-field-${f.key}`);
+                entry[f.key] = f.type === 'checkbox' ? el.checked : el.value.trim();
+            });
+            const id = document.getElementById('in-entry-id').value;
+            const list = [...(userProfile[section] || [])];
+            if (id) {
+                const idx = list.findIndex(x => x.id === id);
+                if (idx === -1) return;
+                list[idx] = { ...list[idx], ...entry };
+            } else {
+                entry.id = crypto.randomUUID();
+                list.push(entry);
+            }
+            try {
+                await setDoc(profileRef(), { [section]: list, updatedAt: serverTimestamp() }, { merge: true });
+                closeEntryForm();
+                showToast('Saved');
+            } catch (e) { console.error(e); showToast('Save failed: ' + e.message, true); }
+        };
+
+        async function deleteEntryFromList(section, id) {
+            const list = (userProfile[section] || []).filter(x => x.id !== id);
+            await setDoc(profileRef(), { [section]: list, updatedAt: serverTimestamp() }, { merge: true });
+        }
+
+        // 卡片上的垃圾桶圖示：不開編輯視窗，直接刪
+        window.deleteEntry = async (section, id) => {
+            if (!currentUser) return;
+            if (!confirm('Delete this entry?')) return;
+            try {
+                await deleteEntryFromList(section, id);
+                if (currentEditSection === section && document.getElementById('in-entry-id').value === id) closeEntryForm();
+                showToast('Deleted');
+            } catch (e) { console.error(e); showToast('Delete failed: ' + e.message, true); }
+        };
+
+        // Entry 編輯視窗裡的「Remove」：刪掉目前正在編輯的這筆，然後關視窗
+        window.removeCurrentEntry = async () => {
+            if (!currentUser || !currentEditSection) return;
+            const section = currentEditSection;
+            const id = document.getElementById('in-entry-id').value;
+            if (!id) return;
+            if (!confirm('Delete this entry?')) return;
+            try {
+                await deleteEntryFromList(section, id);
+                closeEntryForm();
+                showToast('Deleted');
+            } catch (e) { console.error(e); showToast('Delete failed: ' + e.message, true); }
+        };
+
+        // 貼上履歷全文，請 Gemini 拆成結構化 JSON 填入 Profile。
+        // responseMimeType: "application/json" 強制模型只回 JSON，仍防呆解析失敗，絕不默默存垃圾資料
+        // （同一個教訓在 extension/background.js 的 resumeTagRaw/scoreRaw 檢查已經踩過一次）。
+        window.parseResumeIntoProfile = async () => {
+            const text = document.getElementById('profile-resume-input').value.trim();
+            if (!text || !currentUser) return;
+            const apiKey = localStorage.getItem('chloe_gemini_key') || "";
+            if (!apiKey) { showSetup(); return; }
+
+            const btn = document.getElementById('profile-parse-btn');
+            const statusEl = document.getElementById('profile-parse-status');
+            btn.disabled = true;
+            statusEl.className = 'text-xs text-indigo-500 animate-pulse mt-2';
+            statusEl.textContent = 'Gemini is parsing the resume...';
+
+            const systemPrompt = `妳是履歷解析助手，請把使用者貼上的履歷全文拆解成結構化 JSON，只回傳 JSON，不要加任何其他文字或說明。
+JSON 格式：
+{
+  "fullName": "姓名", "email": "email", "phone": "電話",
+  "experience": [{"title":"職稱","company":"公司","type":"類型，例如 Internship/Full-time","startDate":"開始日期","endDate":"結束日期","description":"工作內容描述"}],
+  "education": [{"degree":"學位全名","school":"學校","department":"系所","primary":true或false,"status":"狀態，例如 Present · Masters","startDate":"","endDate":""}],
+  "languages": [{"language":"語言名稱","proficiency":"熟練度，從以下五選一：Native or bilingual proficiency / Full professional proficiency / Professional working proficiency / Limited working proficiency / Elementary proficiency"}],
+  "courses": ["課程名稱1","課程名稱2"],
+  "organizations": [{"role":"角色","org":"組織名稱","startDate":"","endDate":""}],
+  "projects": [{"title":"專案名稱","type":"類型或背景","description":"說明"}]
+}
+履歷裡沒有的區塊就回傳空陣列或空字串，不要編造內容。`;
+
+            try {
+                const aiText = await callGemini(apiKey, {
+                    contents: [{ parts: [{ text: `履歷全文:\n${text}` }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: { responseMimeType: "application/json" }
+                }, (msg) => { statusEl.textContent = msg; });
+
+                let parsed;
+                try {
+                    const stripped = aiText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+                    parsed = JSON.parse(stripped);
+                } catch (e) {
+                    statusEl.className = 'text-xs text-red-400 mt-2 whitespace-pre-wrap';
+                    statusEl.textContent = 'Gemini did not return valid JSON. Nothing was written to your Profile. Raw response:\n' + aiText.slice(0, 500);
+                    return;
+                }
+                if (!parsed || typeof parsed !== 'object' || !(parsed.fullName || parsed.experience?.length || parsed.education?.length)) {
+                    statusEl.className = 'text-xs text-red-400 mt-2 whitespace-pre-wrap';
+                    statusEl.textContent = "Gemini's response didn't look like a parsed resume. Nothing was written to your Profile. Raw response:\n" + aiText.slice(0, 500);
+                    return;
+                }
+
+                if (profileHasAnyData(userProfile) && !confirm('You already have Profile data. Pasting a new resume will overwrite it entirely. Continue?')) {
+                    statusEl.textContent = '';
+                    return;
+                }
+
+                const withIds = (arr) => (Array.isArray(arr) ? arr : []).map(e => ({ ...e, id: crypto.randomUUID() }));
+                await setDoc(profileRef(), {
+                    fullName: parsed.fullName || "",
+                    email: parsed.email || "",
+                    phone: parsed.phone || "",
+                    experience: withIds(parsed.experience),
+                    education: withIds(parsed.education),
+                    languages: withIds(parsed.languages),
+                    courses: Array.isArray(parsed.courses) ? parsed.courses : [],
+                    organizations: withIds(parsed.organizations),
+                    projects: withIds(parsed.projects),
+                    updatedAt: serverTimestamp()
+                });
+                document.getElementById('profile-resume-input').value = '';
+                statusEl.className = 'text-xs text-green-500 mt-2';
+                statusEl.textContent = 'Parsed and filled into Profile';
+            } catch (e) {
+                console.error(e);
+                statusEl.className = 'text-xs text-red-400 mt-2';
+                statusEl.textContent = 'Parsing failed: ' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
         function renderAccount(user) {
             const btn = document.getElementById('account-btn');
-            if (!btn) return;
+            const label = document.getElementById('account-label');
+            if (!btn || !label) return;
             if (user.isAnonymous) {
-                btn.textContent = '🔐 用 Google 登入';
-                btn.title = '登入後資料會跟著帳號，手機和其他電腦也能看到';
+                label.textContent = 'Account';
+                btn.title = 'Sign up or log in to sync your data';
             } else {
-                const email = user.email || user.providerData?.[0]?.email || 'Google 帳號';
-                btn.textContent = `☁️ ${email}`;
-                btn.title = '已用 Google 登入，點一下可以登出';
+                const email = user.email || user.providerData?.[0]?.email || 'Account';
+                label.textContent = email;
+                btn.title = 'Account menu';
+            }
+            renderAccountMenu(user);
+        }
+
+        function renderAccountMenu(user) {
+            const menu = document.getElementById('account-menu');
+            if (!menu) return;
+            const itemClass = "w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors";
+            if (user.isAnonymous) {
+                menu.innerHTML = `
+                    <button onclick="openAuthModal('signup')" class="${itemClass}">Sign Up</button>
+                    <button onclick="openAuthModal('login')" class="${itemClass}">Log In</button>`;
+            } else {
+                menu.innerHTML = `
+                    <button onclick="closeAccountMenu(); openProfile()" class="${itemClass}">Profile</button>
+                    <button onclick="closeAccountMenu(); openResumeManager()" class="${itemClass}">Resumes</button>
+                    <button onclick="closeAccountMenu(); showSetup()" class="${itemClass}">API Key</button>
+                    <div class="h-px bg-slate-100 my-1"></div>
+                    <button onclick="doSignOut()" class="${itemClass} text-red-400 hover:bg-red-50">Log out</button>`;
             }
         }
+
+        window.closeAccountMenu = () => document.getElementById('account-menu').classList.add('hidden');
+
+        window.doSignOut = async () => {
+            const u = auth?.currentUser;
+            if (!u) return;
+            if (confirm(`Sign out of ${u.email || 'your account'}?\nThis browser will become a blank workspace. Signing back in will bring your data back.`)) {
+                window.closeAccountMenu();
+                await signOut(auth);
+                location.reload();
+            }
+        };
+
+        window.openAuthModal = (mode) => {
+            window.closeAccountMenu();
+            document.getElementById('auth-email').value = '';
+            document.getElementById('auth-password').value = '';
+            document.getElementById('auth-first-name').value = '';
+            document.getElementById('auth-last-name').value = '';
+            window.setAuthMode(mode);
+            document.getElementById('auth-modal').classList.replace('hidden', 'flex');
+        };
+
+        window.setAuthMode = (mode) => {
+            authMode = mode;
+            const isSignup = mode === 'signup';
+            document.getElementById('auth-modal-title').textContent = isSignup ? 'Create an Account' : 'Log In';
+            document.getElementById('auth-signup-fields').classList.toggle('hidden', !isSignup);
+            document.getElementById('auth-submit-btn').textContent = isSignup ? 'Create Account' : 'Log In';
+            document.getElementById('auth-toggle-signup').classList.toggle('hidden', !isSignup);
+            document.getElementById('auth-toggle-login').classList.toggle('hidden', isSignup);
+        };
+
+        window.closeAuthModal = () => document.getElementById('auth-modal').classList.replace('flex', 'hidden');
+
+        // Sign Up／Log In 共用：先試著把目前的匿名帳號原地升級成這組 email/password；
+        // 如果這個 email 已經是別的帳號（Log In 的正常情況，或 Sign Up 撞到已存在帳號），改用既有的 migrateInto() 登入該帳號並詢問要不要搬資料
+        async function authWithEmailCredential(email, password, { firstName, lastName } = {}) {
+            const credential = EmailAuthProvider.credential(email, password);
+            const cur = auth.currentUser;
+            try {
+                if (cur?.isAnonymous) {
+                    await linkWithCredential(cur, credential);
+                    renderAccount(auth.currentUser);
+                } else {
+                    await signInWithCredential(auth, credential);
+                }
+                if (firstName || lastName) {
+                    // 用 auth.currentUser（不是模組全域的 currentUser）：onAuthStateChanged 可能還沒來得及把全域變數更新成新帳號
+                    const uid = auth.currentUser.uid;
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'users', uid, 'profile', 'main'), { fullName: [firstName, lastName].filter(Boolean).join(' '), updatedAt: serverTimestamp() }, { merge: true });
+                }
+                window.closeAuthModal();
+                showToast('Signed in');
+            } catch (e) {
+                if (e.code === 'auth/email-already-in-use' || e.code === 'auth/credential-already-in-use') {
+                    try {
+                        await migrateInto(credential);
+                        window.closeAuthModal();
+                    } catch (e2) {
+                        if (e2.code === 'auth/wrong-password' || e2.code === 'auth/invalid-credential' || e2.code === 'auth/invalid-login-credentials') {
+                            showToast('Incorrect email or password', true);
+                        } else {
+                            console.error(e2);
+                            showToast('Sign-in failed: ' + e2.message, true);
+                        }
+                    }
+                } else if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-login-credentials' || e.code === 'auth/user-not-found') {
+                    showToast('Incorrect email or password', true);
+                } else if (e.code === 'auth/weak-password') {
+                    showToast('Password should be at least 6 characters', true);
+                } else if (e.code === 'auth/invalid-email') {
+                    showToast('Please enter a valid email address', true);
+                } else if (e.code === 'auth/operation-not-allowed') {
+                    showToast('Email/Password sign-in is not enabled in Firebase yet (Authentication → Sign-in method → Email/Password)', true);
+                } else {
+                    console.error(e);
+                    showToast('Sign-in failed: ' + e.message, true);
+                }
+            }
+        }
+
+        window.submitAuthForm = () => {
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+            if (!email || !password) { showToast('Email and password are required', true); return; }
+            if (authMode === 'signup') {
+                authWithEmailCredential(email, password, {
+                    firstName: document.getElementById('auth-first-name').value.trim(),
+                    lastName: document.getElementById('auth-last-name').value.trim()
+                });
+            } else {
+                authWithEmailCredential(email, password);
+            }
+        };
 
         // <planMigration>
         // 決定要把哪些舊職缺複製進 Google 帳號：id 已存在、或網址已在該帳號清單中的就略過
@@ -713,7 +2290,7 @@
             try {
                 oldDocs = (await getDocs(jobsCol(auth.currentUser.uid))).docs.map(d => ({ id: d.id, data: d.data() }));
             } catch (e) {
-                showToast('讀取這個瀏覽器的職缺失敗，已取消登入，資料沒有變動：' + e.message, true);
+                showToast('Failed to read jobs from this browser. Sign-in was cancelled, nothing changed: ' + e.message, true);
                 return;
             }
             await signInWithCredential(auth, credential);
@@ -721,7 +2298,7 @@
             const existingDocs = (await getDocs(jobsCol(uid))).docs.map(d => ({ id: d.id, data: d.data() }));
             const toCopy = planMigration(oldDocs, existingDocs);
             for (const d of toCopy) await setDoc(doc(jobsCol(uid), d.id), d.data);
-            showToast(`已用 Google 登入，搬移 ${toCopy.length} 筆職缺（略過 ${oldDocs.length - toCopy.length} 筆已存在）`);
+            showToast(`Signed in with Google. Migrated ${toCopy.length} jobs (skipped ${oldDocs.length - toCopy.length} already there)`);
         }
 
         window.signInWithGoogle = async () => {
@@ -733,7 +2310,7 @@
                     // 把匿名帳號升級成 Google 帳號：uid 不變，所有現有資料原地保留，不需要搬移
                     await linkWithPopup(cur, provider);
                     renderAccount(auth.currentUser);
-                    showToast('已用 Google 登入，現有資料都保留了');
+                    showToast('Signed in with Google. Your existing data is still here.');
                 } else {
                     await signInWithPopup(auth, provider);
                 }
@@ -743,27 +2320,34 @@
                 } else if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
                     // 使用者自己關掉視窗，不用提示
                 } else if (e.code === 'auth/operation-not-allowed') {
-                    showToast('Firebase 還沒啟用 Google 登入（Authentication → Sign-in method → Google）', true);
+                    showToast('Google Sign-In is not enabled in Firebase yet (Authentication → Sign-in method → Google)', true);
                 } else if (e.code === 'auth/unauthorized-domain') {
-                    showToast('這個網址還沒加入 Firebase 的 Authorized domains', true);
+                    showToast('This domain is not in Firebase Authorized domains yet', true);
                 } else if (e.code === 'auth/popup-blocked') {
-                    showToast('瀏覽器擋掉了登入視窗，請允許彈出視窗後再試一次', true);
+                    showToast('The browser blocked the sign-in popup. Allow popups and try again', true);
                 } else {
                     console.error(e);
-                    showToast('登入失敗：' + e.message, true);
+                    showToast('Sign-in failed: ' + e.message, true);
                 }
             }
         };
 
-        window.accountAction = async () => {
-            const u = auth?.currentUser;
-            if (!u) return;
-            if (u.isAnonymous) return window.signInWithGoogle();
-            if (confirm(`要登出 ${u.email || 'Google 帳號'} 嗎？\n登出後這個瀏覽器會變成空白的新工作區，之後再用 Google 登入，資料就會回來。`)) {
-                await signOut(auth);
-                location.reload();
-            }
+        window.accountAction = () => {
+            document.getElementById('account-menu').classList.toggle('hidden');
         };
+
+        document.addEventListener('click', (e) => {
+            const accountBtn = document.getElementById('account-btn');
+            const accountMenu = document.getElementById('account-menu');
+            if (accountMenu && !accountMenu.classList.contains('hidden') && !accountMenu.contains(e.target) && !accountBtn.contains(e.target)) {
+                accountMenu.classList.add('hidden');
+            }
+            const filterBtn = document.getElementById('filter-btn');
+            const filterPanel = document.getElementById('filter-panel');
+            if (filterPanel && !filterPanel.classList.contains('hidden') && !filterPanel.contains(e.target) && !filterBtn?.contains(e.target)) {
+                filterPanel.classList.add('hidden');
+            }
+        });
 
         window.attachDocuments = async (jobId, resumeFile, coverLetterFile) => {
             if (!currentUser) return;
@@ -776,14 +2360,13 @@
 
         window.deleteJob = async () => {
             if (!currentUser) return;
-            if(confirm("確定刪除？")) {
+            if(confirm("Delete this job?")) {
                 await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'jobs', document.getElementById('in-id').value));
                 closeModal();
             }
         };
 
         window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
-        window.toggleAIPanel = () => document.getElementById('ai-panel').classList.toggle('hidden');
     </script>
 </body>
 </html>
