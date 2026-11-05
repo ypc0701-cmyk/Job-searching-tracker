@@ -6,6 +6,7 @@
     <title>Career Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #1e293b; }
@@ -112,9 +113,10 @@
                     <button onclick="navigateOverviewPeriod(-1)" class="pager-btn" title="Previous">&lsaquo;</button>
                     <div class="flex items-center gap-3">
                         <span id="overview-period-label" class="text-sm font-black text-slate-700"></span>
+                        <span id="dash-chart-status-label" class="text-[9px] font-black text-indigo-400 uppercase px-2 py-0.5 bg-indigo-50 rounded-full"></span>
                         <button onclick="jumpToToday()" class="text-[10px] font-black text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Today</button>
                     </div>
-                    <button onclick="navigateOverviewPeriod(1)" class="pager-btn" title="Next">&rsaquo;</button>
+                    <button id="dash-nav-next" onclick="navigateOverviewPeriod(1)" class="pager-btn" title="Next">&rsaquo;</button>
                 </div>
                 <div id="dash-chart-wrap" style="height: 220px;"><canvas id="dash-chart"></canvas></div>
                 <div id="dash-calendar" class="hidden"></div>
@@ -132,6 +134,7 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
                     </button>
                 </div>
+                <input type="text" id="network-search" oninput="renderNetworkList()" placeholder="Search name, company, or title..." class="w-full mb-6 px-6 py-4 bg-white border border-slate-200 rounded-2xl text-sm shadow-sm outline-none focus:border-indigo-400">
                 <div id="network-list" class="flex flex-col gap-5"></div>
             </div>
 
@@ -152,11 +155,6 @@
                     <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Phone Number</label><input id="in-contact-phone" class="input-field"></div>
                     <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Company</label><input id="in-contact-company" class="input-field"></div>
                     <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Title</label><input id="in-contact-title" class="input-field"></div>
-                    <div class="col-span-full"><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Linked Job</label>
-                        <select id="in-contact-job" class="input-field cursor-pointer">
-                            <option value="">-- None --</option>
-                        </select>
-                    </div>
                     <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Contact Status</label>
                         <select id="in-contact-status" class="input-field cursor-pointer">
                             <option value="not_contacted">Not Contacted</option>
@@ -313,6 +311,10 @@
 
             <div class="flex gap-4">
                 <button id="btn-delete" onclick="deleteJob()" class="hidden px-6 font-bold text-red-400 text-sm hover:text-red-600 transition-colors">Delete</button>
+                <button id="btn-generate-resume" onclick="generateResumeFromJD()" class="hidden flex-1 bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
+                    <span>Generate Resume</span>
+                    <div id="generate-resume-loader" class="hidden loader border-t-white"></div>
+                </button>
                 <button onclick="saveJob()" class="flex-1 ai-gradient text-white py-4 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">Save Job</button>
             </div>
             <input type="hidden" id="in-id">
@@ -494,6 +496,37 @@
         </div>
     </div>
 
+    <!-- Contact Popup: 唯讀聯絡人資訊卡，從 Jobs 清單的人像 icon 點進來 -->
+    <div id="contact-popup" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-[65] p-4">
+        <div class="bg-white rounded-[2rem] p-7 w-full max-w-sm shadow-2xl">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 id="contact-popup-name" class="text-xl font-extrabold text-slate-800"></h2>
+                    <p id="contact-popup-subtitle" class="text-xs text-slate-400 font-bold mt-0.5"></p>
+                </div>
+                <button onclick="closeContactPopup()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
+            </div>
+            <div id="contact-popup-body" class="space-y-2 text-sm"></div>
+            <button onclick="closeContactPopup(); showView('network'); openContactForm(document.getElementById('contact-popup-id').value);" class="mt-5 text-sm font-bold text-slate-400 hover:text-slate-600">Edit in Network</button>
+            <input type="hidden" id="contact-popup-id">
+        </div>
+    </div>
+
+    <!-- Resume Result: AI 根據 JD 生成的履歷結果，提供下載 -->
+    <div id="resume-result-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center z-[65] p-4">
+        <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[95vh]">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-extrabold text-slate-800">Resume Generated</h2>
+                <button onclick="closeResumeResultModal()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
+            </div>
+            <p id="resume-result-saved-note" class="text-xs font-bold text-indigo-500 mb-4"></p>
+            <div id="resume-result-text" class="input-field whitespace-pre-wrap text-xs font-mono bg-slate-50 min-h-[320px] max-h-[420px] overflow-y-auto leading-relaxed mb-5"></div>
+            <div class="flex gap-4">
+                <button onclick="downloadGeneratedResume('pdf')" class="flex-1 bg-slate-900 text-white py-3.5 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors">Download PDF</button>
+                <button onclick="downloadGeneratedResume('doc')" class="flex-1 ai-gradient text-white py-3.5 rounded-2xl font-bold shadow-lg hover:scale-[1.01] transition-transform">Download Word (.doc)</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
@@ -819,7 +852,7 @@
             請嚴格遵守以下格式與順序輸出（每個欄位限一行，多個項目用頓號分隔）：
             職稱: [名稱]
             公司: [名稱]
-            類別: [Intern/Full-time]
+            類別: [Intern/Full-time，必須只根據 JD 原文的職稱與內文判斷（例如職稱或內文出現 Intern/Internship/實習/co-op 等字樣才填 Intern，否則填 Full-time）；不可因為候選人背景是學生就預設填 Intern，JD 完全沒提到的話就留空]
             工作型態: [On-site/Remote/Hybrid]
             薪資: [範圍]
             職缺URL: [網址]
@@ -849,6 +882,108 @@
             } finally {
                 btn.disabled = false; loader.classList.add('hidden');
             }
+        };
+
+        // 根據目前貼在 JD 分析區塊的 JD 全文 + Profile 結構化資料，生成一份完整客製化履歷
+        window.generateResumeFromJD = async () => {
+            const jd = document.getElementById('modal-jd-input').value.trim();
+            if (!jd) { showToast('Paste the job description first', true); return; }
+            if (!isProfileComplete(userProfile)) {
+                showToast('Complete your Profile first (name, email, phone, at least one experience and education entry)', true);
+                closeModal();
+                openProfile();
+                return;
+            }
+            const apiKey = localStorage.getItem('chloe_gemini_key') || "";
+            if (!apiKey) { showSetup(); return; }
+
+            const btn = document.getElementById('btn-generate-resume');
+            const loader = document.getElementById('generate-resume-loader');
+            btn.disabled = true; loader.classList.remove('hidden');
+
+            const systemPrompt = `You are a professional resume writer. You may ONLY use the facts given below about this person — never invent experience, titles, companies, numbers, or skills that are not present in the facts. Tailor the wording and emphasis to match the target job description, highlighting the most relevant experience. Output ONLY the full resume text itself, with no preamble, no explanation, and no closing remarks.
+
+Candidate facts (the only source of truth):
+${buildProfileResumeContext(userProfile)}`;
+
+            try {
+                const resumeText = (await callGemini(apiKey, {
+                    contents: [{ parts: [{ text: `Target job description:\n${jd}` }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] }
+                }, (msg) => showToast(msg))).trim();
+
+                if (!resumeText) throw new Error('Gemini returned no content (possibly blocked by safety filters)');
+
+                const company = document.getElementById('in-company').value.trim();
+                const title = document.getElementById('in-title').value.trim();
+                const tag = (company || title) ? `${[company, title].filter(Boolean).join(' – ')} (AI)` : `AI Draft ${new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })}`;
+
+                const resumesCol = collection(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'resumes');
+                await addDoc(resumesCol, { tag, text: resumeText, updatedAt: serverTimestamp() });
+
+                const sel = document.getElementById('in-resume-tag');
+                if (![...sel.options].some(o => o.value === tag)) {
+                    const opt = document.createElement('option');
+                    opt.value = tag; opt.textContent = tag;
+                    sel.appendChild(opt);
+                }
+                sel.value = tag;
+
+                window._lastGeneratedResume = { text: resumeText, tag };
+                document.getElementById('resume-result-saved-note').textContent = `Saved to My Resumes as "${tag}"`;
+                document.getElementById('resume-result-text').textContent = resumeText;
+                document.getElementById('resume-result-modal').classList.replace('hidden', 'flex');
+            } catch (e) {
+                console.error(e);
+                showToast('Generate failed: ' + e.message, true);
+            } finally {
+                btn.disabled = false; loader.classList.add('hidden');
+            }
+        };
+
+        function sanitizeFilename(s) {
+            return (s || 'Resume').replace(/[\\/:*?"<>|]+/g, '_').trim();
+        }
+
+        function downloadResumeAsPDF(text, filename) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+            const marginX = 48, marginY = 56, lineHeight = 14;
+            const maxWidth = doc.internal.pageSize.getWidth() - marginX * 2;
+            const pageHeight = doc.internal.pageSize.getHeight();
+            doc.setFont('helvetica'); doc.setFontSize(10.5);
+            const lines = doc.splitTextToSize(text, maxWidth);
+            let y = marginY;
+            lines.forEach(line => {
+                if (y > pageHeight - marginY) { doc.addPage(); y = marginY; }
+                doc.text(line, marginX, y);
+                y += lineHeight;
+            });
+            doc.save(filename);
+        }
+
+        function downloadResumeAsDoc(text, filename) {
+            const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>Resume</title></head>
+<body><pre style="font-family:Calibri,Arial,sans-serif; font-size:11pt; white-space:pre-wrap;">${escapeHtml(text)}</pre></body></html>`;
+            const blob = new Blob(['﻿', html], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        window.downloadGeneratedResume = (format) => {
+            const data = window._lastGeneratedResume;
+            if (!data) return;
+            const base = sanitizeFilename(data.tag);
+            if (format === 'pdf') downloadResumeAsPDF(data.text, `${base}.pdf`);
+            else downloadResumeAsDoc(data.text, `${base}.doc`);
+        };
+
+        window.closeResumeResultModal = () => {
+            document.getElementById('resume-result-modal').classList.replace('flex', 'hidden');
         };
 
         // 從 Chrome extension 匯入 JD（已經在背景分析好）：開 modal 後直接回填欄位
@@ -945,7 +1080,7 @@
             let applyDate = document.getElementById('in-apply-date').value;
             // Status 剛變成 Applied、Apply Date 還是空的，才自動帶入今天日期；欄位本身隨時能手動覆蓋
             if (newStatus === 'applied' && prevJob?.status !== 'applied' && !applyDate) {
-                applyDate = new Date().toISOString().slice(0, 10);
+                applyDate = localDateKey(new Date());
             }
             const data = {
                 title: document.getElementById('in-title').value,
@@ -1024,7 +1159,9 @@
             if (currentPage > totalPages) currentPage = totalPages;
             const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-            list.innerHTML = pageItems.map(j => `
+            list.innerHTML = pageItems.map(j => {
+                const contact = j.linkedContactId ? userContacts.find(c => c.id === j.linkedContactId) : null;
+                return `
                 <div onclick="openEdit('${j.id}')" class="job-row bg-white px-6 py-4 rounded-2xl shadow-sm border border-slate-100 cursor-pointer transition-all flex flex-col md:flex-row items-center gap-4">
                     <div class="flex md:flex-col items-center justify-center min-w-[60px] gap-1">
                         <span class="text-xl font-black text-indigo-600">${j.score || 0}</span>
@@ -1040,15 +1177,19 @@
                             ${j.type ? `<span class="w-1 h-1 bg-slate-200 rounded-full"></span> <span>${j.type}</span>` : ''}
                         </p>
                     </div>
+                    <div class="flex items-center gap-2">
+                        ${contact ? `<button onclick="event.stopPropagation(); showContactPopup('${contact.id}')" class="p-2 text-slate-300 hover:text-indigo-500" title="${escapeHtml([contact.firstName, contact.lastName].filter(Boolean).join(' ') || contact.preferredName || 'Contact')}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 3.5-6 7-6s6 2 7 6"/></svg>
+                        </button>` : ''}
+                        ${j.jobUrl ? `<a href="${j.jobUrl}" target="_blank" class="p-2 text-slate-300 hover:text-indigo-500" onclick="event.stopPropagation()">🔗</a>` : ''}
+                    </div>
                     <div class="md:w-32 flex justify-center">
                         <span class="text-[10px] font-bold px-4 py-1.5 rounded-full ${STATUS_COLORS[j.status] || STATUS_COLORS.not_applied}">${STATUS_LABELS[j.status] || j.status}</span>
                     </div>
-                    <div class="flex items-center gap-4">
-                        ${j.jobUrl ? `<a href="${j.jobUrl}" target="_blank" class="p-2 text-slate-300 hover:text-indigo-500" onclick="event.stopPropagation()">🔗</a>` : ''}
-                        <div class="text-slate-200">❯</div>
-                    </div>
+                    <div class="text-slate-200">❯</div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
 
             renderPager(document.getElementById('job-pager'), currentPage, totalPages, (p) => { currentPage = p; render(); });
         };
@@ -1077,10 +1218,12 @@
 
         function renderStatusPills() {
             const container = document.getElementById('status-pills');
+            // 選了某一天時，標籤數字要反映那一天的分布，不是永遠顯示全部資料的總數
+            const base = selectedOverviewDay ? allJobs.filter(j => jobDateKey(j) === selectedOverviewDay) : allJobs;
             const counts = {};
             STATUS_VALUES.forEach(s => counts[s] = 0);
-            allJobs.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
-            const pills = [{ value: null, label: 'All', count: allJobs.length }, ...STATUS_VALUES.map(s => ({ value: s, label: STATUS_LABELS[s], count: counts[s] }))];
+            base.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
+            const pills = [{ value: null, label: 'All', count: base.length }, ...STATUS_VALUES.map(s => ({ value: s, label: STATUS_LABELS[s], count: counts[s] }))];
             container.innerHTML = pills.map(p => `
                 <button onclick="setStatusFilter(${p.value ? `'${p.value}'` : 'null'})" class="status-pill ${activeStatusFilter === p.value ? 'active' : ''}">${p.label} &middot; ${p.count}</button>
             `).join('');
@@ -1090,6 +1233,8 @@
             activeStatusFilter = activeStatusFilter === s ? null : s;
             currentPage = 1;
             render();
+            // 狀態卡片也是 Overview 的 stat card，點了要連帶更新圖表算的是哪個狀態
+            if (currentView === 'overview') updateDashboard(allJobs);
         };
 
         window.toggleFilterPanel = () => {
@@ -1170,7 +1315,18 @@
             return overviewMonthAnchor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         }
 
+        // 不能翻到「這週之後」／「這個月之後」：以瀏覽器本地今天為基準比較
+        function isAtCurrentPeriod() {
+            if (dashPeriod === 'week') {
+                const weekStart = getWeekStart();
+                return startOfWeek(overviewWeekAnchor, weekStart).getTime() === startOfWeek(new Date(), weekStart).getTime();
+            }
+            const today = new Date();
+            return overviewMonthAnchor.getFullYear() === today.getFullYear() && overviewMonthAnchor.getMonth() === today.getMonth();
+        }
+
         window.navigateOverviewPeriod = (dir) => {
+            if (dir === 1 && isAtCurrentPeriod()) return;
             if (dashPeriod === 'week') {
                 overviewWeekAnchor = new Date(overviewWeekAnchor);
                 overviewWeekAnchor.setDate(overviewWeekAnchor.getDate() + dir * 7);
@@ -1295,17 +1451,24 @@
             document.getElementById('overview-period-label').textContent = overviewPeriodLabel();
             // Month 熱力圖格子小，卡片跟著縮窄置中，不然寬版卡片裡小月曆兩側會留一大片空白
             document.getElementById('dash-period-card').style.maxWidth = dashPeriod === 'week' ? '640px' : '420px';
+            document.getElementById('dash-nav-next').disabled = isAtCurrentPeriod();
+
+            // 圖表/熱力圖的「每日筆數」預設只算 Applied，點了某張狀態卡片才改算那個狀態
+            // （Total 不是狀態，點 Total 時 activeStatusFilter 是 null，退回預設 Applied）
+            const chartStatus = activeStatusFilter || 'applied';
+            const chartJobs = jobs.filter(j => j.status === chartStatus);
+            document.getElementById('dash-chart-status-label').textContent = STATUS_LABELS[chartStatus];
 
             const chartWrap = document.getElementById('dash-chart-wrap');
             const calendarWrap = document.getElementById('dash-calendar');
             if (dashPeriod === 'week') {
                 chartWrap.classList.remove('hidden');
                 calendarWrap.classList.add('hidden');
-                renderWeekChart(jobs);
+                renderWeekChart(chartJobs);
             } else {
                 chartWrap.classList.add('hidden');
                 calendarWrap.classList.remove('hidden');
-                renderMonthHeatmap(jobs);
+                renderMonthHeatmap(chartJobs);
             }
 
             renderUpcomingInterviews(jobs);
@@ -1390,6 +1553,7 @@
 
         function toggleAISection(show) {
             document.getElementById('modal-ai-section').classList.toggle('hidden', !show);
+            document.getElementById('btn-generate-resume').classList.toggle('hidden', !show);
         }
 
         window.toggleInterviewFields = () => {
@@ -1691,15 +1855,7 @@
             connected: 'bg-green-50 text-green-600 border-green-100'
         };
 
-        function renderContactJobOptions() {
-            const sel = document.getElementById('in-contact-job');
-            const cur = sel.value;
-            sel.innerHTML = '<option value="">-- None --</option>' +
-                allJobs.map(j => `<option value="${j.id}">${escapeHtml(j.company || '')} – ${escapeHtml(j.title || '')}</option>`).join('');
-            sel.value = allJobs.some(j => j.id === cur) ? cur : '';
-        }
-
-        // Job Modal 的「Network Contact」下拉：跟上面 renderContactJobOptions() 是反方向的關聯，各自獨立維護
+        // Job Modal 的「Network Contact」下拉（Job → Contact 這個方向）
         function renderJobContactOptions() {
             const sel = document.getElementById('in-linked-contact');
             if (!sel) return;
@@ -1713,14 +1869,42 @@
             sel.value = userContacts.some(c => c.id === cur) ? cur : '';
         }
 
+        window.showContactPopup = (id) => {
+            const c = userContacts.find(x => x.id === id);
+            if (!c) return;
+            const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.preferredName || 'Unnamed';
+            document.getElementById('contact-popup-id').value = id;
+            document.getElementById('contact-popup-name').textContent = name;
+            document.getElementById('contact-popup-subtitle').textContent = [c.title, c.company].filter(Boolean).join(' · ');
+            const rows = [];
+            if (c.email) rows.push(`<a href="mailto:${escapeHtml(c.email)}" class="flex items-center gap-2 text-indigo-500 hover:text-indigo-700 font-bold">${escapeHtml(c.email)}</a>`);
+            if (c.phone) rows.push(`<a href="tel:${escapeHtml(c.phone)}" class="flex items-center gap-2 text-slate-500 font-bold">${escapeHtml(c.phone)}</a>`);
+            if (c.linkedin) rows.push(`<a href="${escapeHtml(c.linkedin)}" target="_blank" rel="noopener" class="flex items-center gap-2 text-indigo-500 hover:text-indigo-700 font-bold">LinkedIn Profile</a>`);
+            if (c.notes) rows.push(`<p class="text-slate-500 whitespace-pre-wrap pt-2 border-t border-slate-100">${escapeHtml(c.notes)}</p>`);
+            document.getElementById('contact-popup-body').innerHTML = rows.join('') || `<p class="text-slate-300 italic">No contact details yet</p>`;
+            document.getElementById('contact-popup').classList.replace('hidden', 'flex');
+        };
+
+        window.closeContactPopup = () => {
+            document.getElementById('contact-popup').classList.replace('flex', 'hidden');
+        };
+
         function renderNetworkList() {
             const list = document.getElementById('network-list');
+            const q = (document.getElementById('network-search')?.value || '').trim().toLowerCase();
             if (!userContacts.length) {
                 list.innerHTML = `<div class="text-center py-8 text-slate-300 font-bold text-sm">No contacts yet</div>`;
                 return;
             }
+            const contacts = q
+                ? userContacts.filter(c => [c.firstName, c.lastName, c.preferredName, c.company, c.title, c.email].filter(Boolean).join(' ').toLowerCase().includes(q))
+                : userContacts;
+            if (!contacts.length) {
+                list.innerHTML = `<div class="text-center py-8 text-slate-300 font-bold text-sm">No contacts match "${escapeHtml(q)}"</div>`;
+                return;
+            }
             const groups = {};
-            userContacts.forEach(c => { (groups[c.company || 'No Company'] = groups[c.company || 'No Company'] || []).push(c); });
+            contacts.forEach(c => { (groups[c.company || 'No Company'] = groups[c.company || 'No Company'] || []).push(c); });
             const companies = Object.keys(groups).sort((a, b) => a.localeCompare(b));
             list.innerHTML = companies.map(company => `
                 <div>
@@ -1752,6 +1936,9 @@
                     </div>
                 </div>`).join('');
         }
+        // oninput="renderNetworkList()" 是 inline HTML attribute，在全域 scope 找函式，
+        // module 內的宣告要額外掛到 window 上才叫得到（比照 window.render 的既有模式）
+        window.renderNetworkList = renderNetworkList;
 
         window.openNetworkManager = () => showView('network');
         window.closeNetworkManager = () => showView('jobs');
@@ -1765,7 +1952,6 @@
         function openContactFormView() {
             document.getElementById('network-list-view').classList.add('hidden');
             document.getElementById('network-form-view').classList.remove('hidden');
-            renderContactJobOptions();
         }
 
         window.openNewContact = () => {
@@ -1777,7 +1963,6 @@
             });
             document.getElementById('in-contact-status').value = 'not_contacted';
             openContactFormView();
-            document.getElementById('in-contact-job').value = '';
         };
 
         window.openContactForm = (id) => {
@@ -1799,7 +1984,6 @@
             document.getElementById('in-contact-next-followup').value = c.nextFollowUpDate || '';
             document.getElementById('in-contact-notes').value = c.notes || '';
             openContactFormView();
-            document.getElementById('in-contact-job').value = c.linkedJobId || '';
         };
 
         window.saveContact = async () => {
@@ -1816,7 +2000,6 @@
                 phone: document.getElementById('in-contact-phone').value.trim(),
                 company,
                 title: document.getElementById('in-contact-title').value.trim(),
-                linkedJobId: document.getElementById('in-contact-job').value,
                 contactStatus: document.getElementById('in-contact-status').value,
                 lastContactedDate: document.getElementById('in-contact-last-contacted').value,
                 nextFollowUpDate: document.getElementById('in-contact-next-followup').value,
@@ -1867,6 +2050,44 @@
 
         function isProfileComplete(p) {
             return !!(p.fullName && p.email && p.phone && p.experience?.length && p.education?.length);
+        }
+
+        // 把結構化 Profile 轉成條列純文字，餵給 Gemini 當作「唯一允許引用的真實經歷事實」
+        function buildProfileResumeContext(p) {
+            const lines = [];
+            lines.push(`Name: ${p.fullName || ''}`);
+            if (p.email) lines.push(`Email: ${p.email}`);
+            if (p.phone) lines.push(`Phone: ${p.phone}`);
+            if (p.experience?.length) {
+                lines.push('\nExperience:');
+                p.experience.forEach(e => {
+                    lines.push(`- ${e.title || ''}${e.company ? ` at ${e.company}` : ''}${e.type ? ` (${e.type})` : ''}, ${[e.startDate, e.endDate].filter(Boolean).join(' - ')}`);
+                    if (e.description) lines.push(`  ${e.description}`);
+                });
+            }
+            if (p.education?.length) {
+                lines.push('\nEducation:');
+                p.education.forEach(e => {
+                    lines.push(`- ${e.degree || ''}${e.school ? `, ${e.school}` : ''}${e.department ? ` (${e.department})` : ''}, ${[e.startDate, e.endDate].filter(Boolean).join(' - ')}`);
+                });
+            }
+            if (p.languages?.length) {
+                lines.push('\nLanguages:');
+                p.languages.forEach(l => lines.push(`- ${l.language || ''}: ${l.proficiency || ''}`));
+            }
+            if (p.courses?.length) lines.push(`\nCourses: ${p.courses.join(', ')}`);
+            if (p.organizations?.length) {
+                lines.push('\nOrganizations:');
+                p.organizations.forEach(o => lines.push(`- ${o.role || ''}${o.org ? ` at ${o.org}` : ''}, ${[o.startDate, o.endDate].filter(Boolean).join(' - ')}`));
+            }
+            if (p.projects?.length) {
+                lines.push('\nProjects:');
+                p.projects.forEach(pr => {
+                    lines.push(`- ${pr.title || ''}${pr.type ? ` (${pr.type})` : ''}`);
+                    if (pr.description) lines.push(`  ${pr.description}`);
+                });
+            }
+            return lines.join('\n');
         }
 
         function entryRowHtml(section, e) {
