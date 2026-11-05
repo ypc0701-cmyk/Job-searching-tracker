@@ -392,18 +392,6 @@
 
             <div id="profile-incomplete-banner" class="hidden bg-amber-50 border border-amber-100 text-amber-600 text-xs font-bold px-4 py-3 rounded-xl mb-6">Your profile isn't complete yet. Fill in your name, email, phone, and at least one experience and education entry before AI can generate tailored resumes.</div>
 
-            <div class="bg-indigo-50/50 p-5 rounded-2xl mb-8 border border-indigo-100/50">
-                <div class="flex justify-between items-center mb-2">
-                    <p class="text-[10px] font-bold text-indigo-400 uppercase">Chat with AI about your Profile</p>
-                    <button onclick="clearProfileChat()" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors">Clear chat</button>
-                </div>
-                <div id="profile-chat-messages" class="flex flex-col gap-3 max-h-80 overflow-y-auto mb-3 pr-1"></div>
-                <div class="flex gap-2">
-                    <input id="profile-chat-input" class="input-field text-xs bg-white/80" placeholder="e.g. Add a job at Google as Product Manager, 2023 to 2024" onkeydown="if(event.key==='Enter') sendProfileChatMessage()">
-                    <button id="profile-chat-send" onclick="sendProfileChatMessage()" class="px-4 text-xs font-bold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">Send</button>
-                </div>
-            </div>
-
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Full Name</label><input id="in-profile-name" class="input-field"></div>
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Email</label><input id="in-profile-email" class="input-field"></div>
@@ -594,8 +582,8 @@
         let profileModalOpen = false;
         let currentEditSection = null;
 
-        // Profile AI 聊天室：只存在前端記憶體，重新整理頁面會清空，關掉 Profile 彈窗再打開不會清空
-        let profileChatMessages = [];
+        // 全站 AI 助理聊天室：只存在前端記憶體，重新整理頁面會清空，切換頁面或開關視窗都不會清空
+        let assistantChatMessages = [];
 
         // Network（聯絡人追蹤）
         let userContacts = [];
@@ -847,33 +835,9 @@
             }
         }
 
-        window.analyzeJDNative = async () => {
-            const jd = document.getElementById('modal-jd-input').value;
-            if (!jd) return;
-
-            const apiKey = localStorage.getItem('chloe_gemini_key') || "";
-            if (!apiKey) {
-                showSetup();
-                return;
-            }
-            if (!userResumes.length) {
-                showToast('Add at least one resume under "Resumes" before running an analysis', true);
-                return;
-            }
-
-            const btn = document.getElementById('modal-analyze-btn');
-            const loader = document.getElementById('modal-ai-loader');
-            const resArea = document.getElementById('modal-ai-result');
-
-            btn.disabled = true; loader.classList.remove('hidden');
-            resArea.innerHTML = `<p class="text-xs text-indigo-500 animate-pulse text-center">Gemini is deep-scanning the JD...</p>`;
-
-            // 使用者自己履歷庫的實際內容，讓 Gemini 逐份比對後推薦，而非只看名稱猜測
-            const resumeSection = userResumes
-                .map(r => `═══ 履歷版本「${r.tag}」═══\n${(r.text || '').slice(0, 2600)}`)
-                .join('\n\n');
-
-            const systemPrompt = `妳是 Chloe 的職業顧問，目標是判斷這份履歷投遞後，通過企業篩選（ATS 關鍵字比對 + 招募人員初步篩選）的機率有多高。請依序完成：
+        // 評分標準文字：Job AI Analysis 跟全站 AI 助理（回答「怎麼打分數」）共用同一份，避免兩邊各寫一次、以後改到不同步
+        function buildScoringRubricText() {
+            return `妳是 Chloe 的職業顧問，目標是判斷這份履歷投遞後，通過企業篩選（ATS 關鍵字比對 + 招募人員初步篩選）的機率有多高。請依序完成：
 
             第一步：從 Chloe 的每一份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
 
@@ -909,7 +873,36 @@
             - 到職日期風險：到職日期明顯早於或遠晚於候選人背景裡可開始工作的時間
             - JD 明確寫「不提供現在或未來的簽證贊助」（候選人不需要贊助，但這類用語代表申請表上可能會問身份問題，需要如實回答）
             - 需要常駐現場或頻繁出差
-            - JD 把候選人背景或所有履歷版本都沒有的經驗當作核心必要條件
+            - JD 把候選人背景或所有履歷版本都沒有的經驗當作核心必要條件`;
+        }
+
+        window.analyzeJDNative = async () => {
+            const jd = document.getElementById('modal-jd-input').value;
+            if (!jd) return;
+
+            const apiKey = localStorage.getItem('chloe_gemini_key') || "";
+            if (!apiKey) {
+                showSetup();
+                return;
+            }
+            if (!userResumes.length) {
+                showToast('Add at least one resume under "Resumes" before running an analysis', true);
+                return;
+            }
+
+            const btn = document.getElementById('modal-analyze-btn');
+            const loader = document.getElementById('modal-ai-loader');
+            const resArea = document.getElementById('modal-ai-result');
+
+            btn.disabled = true; loader.classList.remove('hidden');
+            resArea.innerHTML = `<p class="text-xs text-indigo-500 animate-pulse text-center">Gemini is deep-scanning the JD...</p>`;
+
+            // 使用者自己履歷庫的實際內容，讓 Gemini 逐份比對後推薦，而非只看名稱猜測
+            const resumeSection = userResumes
+                .map(r => `═══ 履歷版本「${r.tag}」═══\n${(r.text || '').slice(0, 2600)}`)
+                .join('\n\n');
+
+            const systemPrompt = `${buildScoringRubricText()}
 
             候選人背景（只能引用以下事實，不可編造）：
             ${buildProfileResumeContext(userProfile)}
@@ -2477,7 +2470,6 @@ AI Tools: [Tool], [Tool]`;
             profileModalOpen = true;
             closeEntryForm();
             renderProfile();
-            renderProfileChat();
             document.getElementById('profile-modal').classList.replace('hidden', 'flex');
         };
 
@@ -2693,7 +2685,7 @@ JSON 格式：
         };
 
         // 動態從 ENTRY_FIELDS 組出每個 section 的欄位說明，避免跟表單本身的欄位定義兩邊維護到不同步
-        function buildProfileChatSystemPrompt() {
+        function buildAssistantSystemPrompt() {
             const sectionSchemas = Object.keys(ENTRY_FIELDS).map(section => {
                 const fields = ENTRY_FIELDS[section].map(f => `${f.key}${f.type === 'select' ? ` (只能是：${f.options.join(' / ')})` : ''}`).join('、');
                 return `  - "${section}"（${SECTION_LABELS[section]}）欄位：${fields}`;
@@ -2701,9 +2693,25 @@ JSON 格式：
 
             const { updatedAt, ...profileData } = userProfile;
 
-            return `妳是 Chloe 的 Profile 編輯助手。妳可以跟她聊天討論，也可以在她明確要求新增/修改/刪除某一筆經歷、學歷等資料時，提出具體的修改建議。妳的建議不會自動套用，Chloe 看過、確認後才會真的存檔，所以可以放心提出建議。
+            const jobsSummary = allJobs.map(j => ({
+                company: j.company, title: j.title, status: STATUS_LABELS[j.status] || j.status,
+                category: j.category, type: j.type, state: j.state, city: j.city,
+                applyDate: j.applyDate, interviewStage: j.interviewStage, nextInterviewDate: j.nextInterviewDate,
+                score: j.score, channel: j.channel,
+                createdAt: j.createdAt?.toDate ? localDateKey(j.createdAt.toDate()) : null
+            }));
 
-絕對不可以編造她沒有提到的經歷、公司、數字或細節——只能使用她在對話裡親口提供的事實，或是她現有 Profile 裡已經有的內容。不確定的話就在 reply 裡用問題澄清，action 給 null。
+            return `妳是 Chloe 的 Career Hub 全站 AI 助理，整個網站任何頁面都看得到妳。妳有三種任務：
+
+一、Profile 編輯：她可以跟妳聊天討論，也可以在她明確要求新增/修改/刪除某一筆經歷、學歷等資料時，提出具體的修改建議。妳的建議不會自動套用，Chloe 看過、確認後才會真的存檔，所以可以放心提出建議。
+
+二、職缺資料庫問答（唯讀）：她可能會問關於職缺資料庫的統計/查詢問題，例如「這週申請了幾個工作」「收到 interview 的比例是多少」「哪些工作還沒申請」。自己從下面給的職缺摘要裡算，不要用資料庫以外的數字，也不要透過 action 去新增/修改/刪除職缺（這類問題只能用 reply 文字回答，action 給 null）。
+
+三、評分標準說明：她可能會問這個 app 怎麼幫職缺打分數，用下面給的規則回答，不要自己發明別的算法。
+
+絕對不可以編造她沒有提到的經歷、公司、數字或細節——只能使用她在對話裡親口提供的事實，或是她現有 Profile／職缺資料裡已經有的內容。不確定的話就在 reply 裡用問題澄清，action 給 null。
+
+今天日期（本地時區）：${localDateKey(new Date())}
 
 她目前的 Profile 內容（JSON，給妳對照，update/delete 時要用裡面現有的 id 去指定要改哪一筆）：
 ${JSON.stringify(profileData)}
@@ -2712,37 +2720,43 @@ ${JSON.stringify(profileData)}
 ${sectionSchemas}
   - "basic"（基本資料）欄位：fullName、email、phone
 
+她目前所有職缺的摘要（JSON 陣列，只給統計/查詢用得到的欄位，不含完整職缺描述全文）：
+${JSON.stringify(jobsSummary)}
+
+這個 app 幫職缺打分數的規則：
+${buildScoringRubricText()}
+
 妳的回覆一定要是以下 JSON 格式，不要加任何其他文字：
 {
   "reply": "給 Chloe 看的自然語言回覆",
-  "action": null，或者當她明確要求改動時給：{
+  "action": null，或者當她明確要求改動 Profile 時給：{
     "op": "add" 或 "update" 或 "delete",
     "section": "experience/education/languages/organizations/projects 其中一個，或 basic",
     "id": "op 是 update 或 delete 時，填現有那筆資料的 id；op 是 add 或 section 是 basic 時填空字串",
     "data": op 是 delete 時給 null，否則給一個物件，欄位照上面列出的欄位名稱（update 時只需要給想改的欄位，其他會保留原值）
   }
 }
-單純聊天、澄清問題、或她還沒明確說要改什麼的時候，action 給 null。`;
+單純聊天、澄清問題、職缺統計問答、評分標準說明，或她還沒明確說要改什麼的時候，action 一律給 null。`;
         }
 
-        window.sendProfileChatMessage = async () => {
-            const input = document.getElementById('profile-chat-input');
+        window.sendAssistantMessage = async () => {
+            const input = document.getElementById('assistant-chat-input');
             const text = input.value.trim();
             if (!text || !currentUser) return;
             const apiKey = localStorage.getItem('chloe_gemini_key') || "";
             if (!apiKey) { showSetup(); return; }
 
-            profileChatMessages.push({ role: 'user', text });
+            assistantChatMessages.push({ role: 'user', text });
             input.value = '';
-            renderProfileChat();
+            renderAssistantChat();
 
-            const sendBtn = document.getElementById('profile-chat-send');
+            const sendBtn = document.getElementById('assistant-chat-send');
             sendBtn.disabled = true;
             try {
-                const contents = profileChatMessages.map(m => ({ role: m.role, parts: [{ text: m.text }] }));
+                const contents = assistantChatMessages.map(m => ({ role: m.role, parts: [{ text: m.text }] }));
                 const aiText = await callGemini(apiKey, {
                     contents,
-                    systemInstruction: { parts: [{ text: buildProfileChatSystemPrompt() }] },
+                    systemInstruction: { parts: [{ text: buildAssistantSystemPrompt() }] },
                     generationConfig: { responseMimeType: "application/json" }
                 }, (msg) => showToast(msg));
 
@@ -2751,23 +2765,23 @@ ${sectionSchemas}
                 try {
                     parsed = JSON.parse(stripped);
                 } catch (e) {
-                    profileChatMessages.push({ role: 'model', text: 'Gemini 回覆格式不對，沒有套用任何變更。原始回覆：\n' + aiText.slice(0, 500), action: null });
-                    renderProfileChat();
+                    assistantChatMessages.push({ role: 'model', text: 'Gemini 回覆格式不對，沒有套用任何變更。原始回覆：\n' + aiText.slice(0, 500), action: null });
+                    renderAssistantChat();
                     return;
                 }
-                profileChatMessages.push({ role: 'model', text: parsed.reply || '', action: parsed.action || null });
-                renderProfileChat();
+                assistantChatMessages.push({ role: 'model', text: parsed.reply || '', action: parsed.action || null });
+                renderAssistantChat();
             } catch (e) {
                 console.error(e);
-                profileChatMessages.push({ role: 'model', text: '發生錯誤：' + e.message, action: null });
-                renderProfileChat();
+                assistantChatMessages.push({ role: 'model', text: '發生錯誤：' + e.message, action: null });
+                renderAssistantChat();
             } finally {
                 sendBtn.disabled = false;
             }
         };
 
         // 用 action.section/id 去現有 Profile 查出目前名稱，當「建議：修改／刪除 XXX」的標籤內容，方便套用前核對是不是認錯對象
-        function describeProfileChatAction(action) {
+        function describeAssistantAction(action) {
             if (action.section === 'basic') return `${action.op === 'update' ? '修改' : '新增'}基本資料`;
             const verb = { add: '新增', update: '修改', delete: '刪除' }[action.op] || action.op;
             const label = SECTION_LABELS[action.section] || action.section;
@@ -2777,38 +2791,38 @@ ${sectionSchemas}
             return `${verb} ${label}${name ? ` — ${name}` : ''}`;
         }
 
-        function renderProfileChat() {
-            const box = document.getElementById('profile-chat-messages');
+        function renderAssistantChat() {
+            const box = document.getElementById('assistant-chat-messages');
             if (!box) return;
-            box.innerHTML = profileChatMessages.map((m, i) => {
+            box.innerHTML = assistantChatMessages.map((m, i) => {
                 const bubble = `<div class="${m.role === 'user' ? 'bg-indigo-500 text-white self-end' : 'bg-white text-slate-700'} text-xs px-3 py-2 rounded-xl max-w-[90%] whitespace-pre-wrap">${escapeHtml(m.text)}</div>`;
                 if (m.role !== 'model' || !m.action) {
                     return `<div class="flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}">${bubble}</div>`;
                 }
                 const actionBlock = `
                     <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mt-1 max-w-[90%]">
-                        <p class="text-[10px] font-bold text-indigo-400 uppercase mb-2">建議：${escapeHtml(describeProfileChatAction(m.action))}</p>
+                        <p class="text-[10px] font-bold text-indigo-400 uppercase mb-2">建議：${escapeHtml(describeAssistantAction(m.action))}</p>
                         ${m.action.op !== 'delete' ? `<textarea id="chat-action-data-${i}" rows="5" class="input-field font-mono text-[11px] mb-2">${escapeHtml(JSON.stringify(m.action.data || {}, null, 2))}</textarea>` : ''}
                         ${m.applied
                             ? `<p class="text-[10px] font-bold text-green-500">已套用</p>`
                             : `<div class="flex gap-3">
-                                   <button onclick="applyProfileChatAction(${i})" class="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Apply to Profile</button>
-                                   <button onclick="discardProfileChatAction(${i})" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wider">Discard</button>
+                                   <button onclick="applyAssistantAction(${i})" class="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Apply to Profile</button>
+                                   <button onclick="discardAssistantAction(${i})" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wider">Discard</button>
                                </div>`}
                     </div>`;
                 return `<div class="flex flex-col items-start gap-1">${bubble}${actionBlock}</div>`;
-            }).join('') || `<p class="text-xs text-slate-300 italic">Ask the AI to add, change, or remove something in your Profile.</p>`;
+            }).join('') || `<p class="text-xs text-slate-300 italic">Ask about your Profile, job stats, or how scoring works.</p>`;
             box.scrollTop = box.scrollHeight;
         }
 
-        window.discardProfileChatAction = (msgIndex) => {
-            const msg = profileChatMessages[msgIndex];
+        window.discardAssistantAction = (msgIndex) => {
+            const msg = assistantChatMessages[msgIndex];
             if (msg) msg.action = null;
-            renderProfileChat();
+            renderAssistantChat();
         };
 
-        window.applyProfileChatAction = async (msgIndex) => {
-            const msg = profileChatMessages[msgIndex];
+        window.applyAssistantAction = async (msgIndex) => {
+            const msg = assistantChatMessages[msgIndex];
             if (!msg?.action || !currentUser) return;
             const { op, section, id } = msg.action;
             let data = null;
@@ -2833,15 +2847,22 @@ ${sectionSchemas}
                     await setDoc(profileRef(), { [section]: list, updatedAt: serverTimestamp() }, { merge: true });
                 }
                 msg.applied = true;
-                renderProfileChat();
+                renderAssistantChat();
                 renderProfile();
                 showToast('Profile 已更新');
             } catch (e) { console.error(e); showToast('套用失敗：' + e.message, true); }
         };
 
-        window.clearProfileChat = () => {
-            profileChatMessages = [];
-            renderProfileChat();
+        window.clearAssistantChat = () => {
+            assistantChatMessages = [];
+            renderAssistantChat();
+        };
+
+        window.toggleAssistant = () => {
+            const panel = document.getElementById('assistant-panel');
+            const opening = panel.classList.contains('hidden');
+            panel.classList.replace(opening ? 'hidden' : 'flex', opening ? 'flex' : 'hidden');
+            if (opening) renderAssistantChat();
         };
 
         function renderAccount(user) {
@@ -3067,5 +3088,26 @@ ${sectionSchemas}
 
         window.closeModal = () => document.getElementById('modal').classList.replace('flex', 'hidden');
     </script>
+
+    <!-- 全站 AI 助理：收合時是右下角圓形按鈕，展開時是浮動聊天視窗，任何頁面都看得到 -->
+    <div id="assistant-widget" class="fixed bottom-6 right-6 z-[90]">
+        <button id="assistant-toggle" onclick="toggleAssistant()" class="w-14 h-14 rounded-full ai-gradient shadow-xl flex items-center justify-center text-white hover:scale-105 transition-transform">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        </button>
+        <div id="assistant-panel" class="hidden absolute bottom-16 right-0 w-[380px] max-w-[90vw] bg-white rounded-[2rem] shadow-2xl border border-slate-100 p-5 flex-col" style="max-height: min(70vh, 600px)">
+            <div class="flex justify-between items-center mb-3">
+                <p class="text-sm font-extrabold text-slate-800">Career Hub AI</p>
+                <div class="flex items-center gap-3">
+                    <button onclick="clearAssistantChat()" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors">Clear</button>
+                    <button onclick="toggleAssistant()" class="text-slate-300 hover:text-slate-500 text-lg leading-none">✕</button>
+                </div>
+            </div>
+            <div id="assistant-chat-messages" class="flex flex-col gap-3 overflow-y-auto mb-3 flex-1"></div>
+            <div class="flex gap-2">
+                <input id="assistant-chat-input" class="input-field text-xs" placeholder="改 Profile、問職缺統計、問評分標準…" onkeydown="if(event.key==='Enter') sendAssistantMessage()">
+                <button id="assistant-chat-send" onclick="sendAssistantMessage()" class="px-4 text-xs font-bold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">Send</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
