@@ -97,8 +97,10 @@
                     <div class="flex bg-slate-100 rounded-full p-1">
                         <button id="dash-tab-week" onclick="setDashPeriod('week')" class="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors">Week</button>
                         <button id="dash-tab-month" onclick="setDashPeriod('month')" class="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors">Month</button>
+                        <button id="dash-tab-year" onclick="setDashPeriod('year')" class="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors">Year</button>
+                        <button id="dash-tab-custom" onclick="setDashPeriod('custom')" class="px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors">Custom</button>
                     </div>
-                    <div class="flex items-center gap-1.5">
+                    <div id="week-start-toggle" class="flex items-center gap-1.5">
                         <span class="text-[9px] font-black text-slate-400 uppercase mr-0.5">Week starts</span>
                         <button id="week-start-mon" onclick="setWeekStart('monday')" class="px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors">Mon</button>
                         <button id="week-start-sun" onclick="setWeekStart('sunday')" class="px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors">Sun</button>
@@ -109,7 +111,7 @@
             <div class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-6" id="stats-container"></div>
 
             <div id="dash-period-card" class="glass p-6 rounded-[2rem] shadow-sm mb-6 mx-auto transition-all" style="max-width: 640px;">
-                <div class="flex items-center justify-between mb-3">
+                <div id="dash-nav-default" class="flex items-center justify-between mb-3">
                     <button onclick="navigateOverviewPeriod(-1)" class="pager-btn" title="Previous">&lsaquo;</button>
                     <div class="flex items-center gap-3">
                         <span id="overview-period-label" class="text-sm font-black text-slate-700"></span>
@@ -117,6 +119,12 @@
                         <button onclick="jumpToToday()" class="text-[10px] font-black text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Today</button>
                     </div>
                     <button id="dash-nav-next" onclick="navigateOverviewPeriod(1)" class="pager-btn" title="Next">&rsaquo;</button>
+                </div>
+                <div id="dash-custom-range" class="hidden flex items-center justify-center gap-2 mb-3 flex-wrap">
+                    <input type="date" id="dash-custom-start" onchange="setCustomRangeStart(this.value)" class="input-field text-xs" style="width: auto;">
+                    <span class="text-slate-300 text-xs font-bold">&ndash;</span>
+                    <input type="date" id="dash-custom-end" onchange="setCustomRangeEnd(this.value)" class="input-field text-xs" style="width: auto;">
+                    <button onclick="clearCustomRange()" class="text-[10px] font-black text-indigo-500 hover:text-indigo-700 uppercase tracking-wider ml-1">Clear (All)</button>
                 </div>
                 <div id="dash-chart-wrap" style="height: 220px;"><canvas id="dash-chart"></canvas></div>
                 <div id="dash-calendar" class="hidden"></div>
@@ -230,6 +238,11 @@
                 <div id="modal-ai-result" class="mt-4 empty:mt-0"></div>
             </div>
 
+            <div class="mb-6">
+                <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Job Description</label>
+                <textarea id="in-job-description" rows="6" class="input-field font-mono text-xs" placeholder="The original job posting text is saved here once you save this job."></textarea>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Job Title</label><input id="in-title" class="input-field"></div>
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Company</label><input id="in-company" class="input-field"></div>
@@ -242,7 +255,11 @@
                         <option value="Hybrid">Hybrid</option>
                     </select>
                 </div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">State</label><input id="in-state" class="input-field"></div>
+                <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">State</label>
+                    <select id="in-state" class="input-field cursor-pointer">
+                        <option value="">-- Select State --</option>
+                    </select>
+                </div>
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">City</label><input id="in-city" class="input-field"></div>
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Status</label>
                     <select id="in-status" onchange="toggleInterviewFields()" class="input-field cursor-pointer">
@@ -311,7 +328,7 @@
 
             <div class="flex gap-4">
                 <button id="btn-delete" onclick="deleteJob()" class="hidden px-6 font-bold text-red-400 text-sm hover:text-red-600 transition-colors">Delete</button>
-                <button id="btn-generate-resume" onclick="generateResumeFromJD()" class="hidden flex-1 bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
+                <button id="btn-generate-resume" onclick="generateResumeFromJD()" class="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
                     <span>Generate Resume</span>
                     <div id="generate-resume-loader" class="hidden loader border-t-white"></div>
                 </button>
@@ -540,6 +557,8 @@
         let currentView = 'jobs';
         let overviewWeekAnchor = new Date();
         let overviewMonthAnchor = new Date();
+        let overviewYearAnchor = new Date();
+        let customRangeStart = null, customRangeEnd = null; // 'YYYY-MM-DD' 或 null；都是 null = All
         let selectedOverviewDay = null;
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : "chloe-career-listview";
         const DEFAULT_FIREBASE_CONFIG = {
@@ -609,6 +628,17 @@
             ]
         };
         const SECTION_LABELS = { experience: 'Experience', education: 'Education', languages: 'Language', organizations: 'Organization', projects: 'Project' };
+
+        const US_STATES = [
+            'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
+            'District of Columbia', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa',
+            'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota',
+            'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey',
+            'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon',
+            'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah',
+            'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'
+        ];
+        document.getElementById('in-state').insertAdjacentHTML('beforeend', US_STATES.map(s => `<option value="${s}">${s}</option>`).join(''));
 
         // 狀態值：英文 code。STATUS_LABELS 給顯示文字、STATUS_COLORS 給徽章樣式。
         const STATUS_VALUES = ['not_applied', 'applied', 'interview', 'offer', 'declined_offer', 'rejected'];
@@ -832,50 +862,62 @@
             第一步：從 Chloe 的每一份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
 
             第二步：只針對第一步選定的那份履歷，逐項檢查：
-            (a) JD 是否有明確列出「必要條件」（年級、學位、簽證身份、特定證照、必備年資等）？選定履歷是否全部符合？
+            (a) JD 是否有明確列出「必要條件」（年級、學位、簽證身份、特定證照、必備年資等）？若 JD 完全沒有明確列出必要條件，視為「無特別必要條件」，不要因為沒明列就自動扣分，改以職責覆蓋與關鍵字命中為主要評分依據。選定履歷是否全部符合明確列出的必要條件？
             (b) JD 列出的核心職責（Responsibilities / What You'll Do 等段落），選定履歷裡有幾項能找到具體對應的經歷？哪些沒有對應到？
             (c) JD 明確提到的技能／工具／技術關鍵字，選定履歷的文字裡有哪些命中、哪些缺漏？
 
-            第三步：根據以下級距給分數，分數代表「這份履歷投遞後，通過 ATS 關鍵字篩選與招募人員初步篩選的機率」，不要因為這是裡面最好的就自動給高分：
+            第三步：根據以下級距給分數，分數代表「這份履歷投遞後，通過 ATS 關鍵字篩選與招募人員初步篩選的機率」，不要因為這是裡面最好的就自動給高分。分數請輸出整數，不要用小數：
             9-10 分：必要條件全滿足、核心職責幾乎逐項對應、關鍵字大多命中——ATS 和人工都很可能通過
             7-8 分：必要條件滿足、核心職責覆蓋六至八成、關鍵字命中多數——大機率通過 ATS，人工掃過也有印象
             5-6 分：必要條件滿足，但核心職責只覆蓋一半左右、或關鍵字明顯缺漏——可能通過寬鬆的 ATS，嚴格篩選容易被刷掉
             3-4 分：核心職責覆蓋率低、關鍵字大量缺漏，履歷跟職缺關聯薄弱
             0-2 分：不符合 JD 明確列出的必要條件，或六份履歷都跟此職缺缺乏實質相關性——很可能第一關就被刷掉
 
-            候選人背景：MSBA 學生，具備 1.8M 數據處理經驗與創業背景。
+            候選人背景（只能引用以下事實，不可編造）：
+            ${buildProfileResumeContext(userProfile)}
 
             以下是 Chloe 所有履歷版本的完整內容：
 
             ${resumeSection}
 
-            請嚴格遵守以下格式與順序輸出（每個欄位限一行，多個項目用頓號分隔）：
-            職稱: [名稱]
-            公司: [名稱]
-            類別: [Intern/Full-time，必須只根據 JD 原文的職稱與內文判斷（例如職稱或內文出現 Intern/Internship/實習/co-op 等字樣才填 Intern，否則填 Full-time）；不可因為候選人背景是學生就預設填 Intern，JD 完全沒提到的話就留空]
-            工作型態: [On-site/Remote/Hybrid]
-            薪資: [範圍]
-            職缺URL: [網址]
-            建議履歷: [${userResumes.map(r => r.tag).join('、')} 其中之一]
-            履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
-            必要條件: [符合／不符合，若不符合列出缺少哪些條件]
-            職責覆蓋: [X/Y 項對應，列出未覆蓋的職責]
-            關鍵字命中: [列出命中的關鍵字，無則寫 無]
-            關鍵字缺漏: [列出缺漏的關鍵字，無則寫 無]
-            分數: [0-10，嚴格依照上述級距]
-            理由: [兩句話總結，需緊扣上面的職責覆蓋與關鍵字分析]
-            建議: [針對關鍵字缺漏與職責缺口，具體建議如何調整履歷內容以提高通過篩選的機率]`;
+            請只回傳一個 JSON 物件，不要加任何其他文字、說明或 Markdown 符號，格式如下：
+            {
+              "title": "職稱，JD 沒提到就填空字串",
+              "company": "公司名稱，JD 沒提到就填空字串",
+              "state": "州名，只能是以下清單其中之一：${US_STATES.join('、')}；JD 沒提到或不是美國地點就填空字串",
+              "city": "城市名，JD 沒提到就填空字串",
+              "category": "只能是 Intern 或 Full-time 其中之一，必須只根據 JD 原文的職稱與內文判斷（出現 Intern/Internship/實習/co-op 等字樣才填 Intern，否則填 Full-time）；不可因為候選人背景是學生就預設填 Intern，JD 完全沒提到的話填空字串",
+              "workStyle": "On-site、Remote、Hybrid 其中之一，JD 沒提到就填空字串",
+              "salary": "薪資範圍，JD 沒提到就填空字串",
+              "jobUrl": "JD 裡提到的職缺網址，沒有就填空字串",
+              "suggestedResume": "從以下履歷版本的名稱中選一個最貼合的：${userResumes.map(r => r.tag).join('、')}",
+              "resumeReason": "一句話說明為何這份履歷的哪些具體經歷最貼合 JD",
+              "requirements": "必要條件符合／不符合，若不符合列出缺少哪些條件；若 JD 沒有明確必要條件就填「無特別必要條件」",
+              "responsibilityCoverage": "X/Y 項對應，列出未覆蓋的職責",
+              "keywordHits": "命中的關鍵字，無則填「無」",
+              "keywordGaps": "缺漏的關鍵字，無則填「無」",
+              "score": 0到10之間的整數，嚴格依照上述級距,
+              "reasoning": "兩句話總結，需緊扣上面的職責覆蓋與關鍵字分析",
+              "suggestions": "針對關鍵字缺漏與職責缺口，具體建議如何調整履歷內容以提高通過篩選的機率"
+            }`;
 
             try {
                 const aiText = await callGemini(apiKey, {
                     contents: [{ parts: [{ text: `JD內容: ${jd}` }] }],
-                    systemInstruction: { parts: [{ text: systemPrompt }] }
-                }, (msg) => { resArea.innerHTML = `<p class="text-xs text-amber-500 animate-pulse text-center">${msg}</p>`; }) || "Analysis failed (Gemini returned no content, possibly blocked by safety filters)";
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: { responseMimeType: "application/json" }
+                }, (msg) => { resArea.innerHTML = `<p class="text-xs text-amber-500 animate-pulse text-center">${msg}</p>`; });
+
+                if (!aiText) throw new Error('Analysis failed (Gemini returned no content, possibly blocked by safety filters)');
+                let result;
+                try { result = JSON.parse(aiText); }
+                catch (e) { throw new Error('Gemini did not return valid JSON: ' + aiText.slice(0, 200)); }
+                window._lastAnalysisResult = result;
 
                 resArea.innerHTML = `
                     <div class="text-left text-xs bg-slate-50 p-4 rounded-xl border border-indigo-100 max-h-[300px] overflow-y-auto">
-                        <pre class="whitespace-pre-wrap font-sans text-slate-700 leading-relaxed">${aiText}</pre>
-                        <button onclick="parseAIText(\`${aiText.replace(/`/g, "\\`").replace(/\$/g, "\\$")}\`)" class="w-full mt-4 py-3 ai-gradient text-white rounded-lg font-bold shadow-md">Fill Job Fields</button>
+                        <pre class="whitespace-pre-wrap font-sans text-slate-700 leading-relaxed">${escapeHtml(formatAnalysisForDisplay(result))}</pre>
+                        <button onclick="fillJobFieldsFromAnalysis(window._lastAnalysisResult)" class="w-full mt-4 py-3 ai-gradient text-white rounded-lg font-bold shadow-md">Fill Job Fields</button>
                     </div>`;
             } catch (e) {
                 resArea.innerHTML = `<div class="p-4 text-red-400 text-xs text-center">Error: ${e.message}</div>`;
@@ -884,10 +926,10 @@
             }
         };
 
-        // 根據目前貼在 JD 分析區塊的 JD 全文 + Profile 結構化資料，生成一份完整客製化履歷
+        // 根據存檔的 Job Description（優先）或 JD 分析框裡還沒存檔的內容 + Profile 結構化資料，生成一份完整客製化履歷
         window.generateResumeFromJD = async () => {
-            const jd = document.getElementById('modal-jd-input').value.trim();
-            if (!jd) { showToast('Paste the job description first', true); return; }
+            const jd = document.getElementById('in-job-description').value.trim() || document.getElementById('modal-jd-input').value.trim();
+            if (!jd) { showToast('Add a job description first', true); return; }
             if (!isProfileComplete(userProfile)) {
                 showToast('Complete your Profile first (name, email, phone, at least one experience and education entry)', true);
                 closeModal();
@@ -989,85 +1031,58 @@ ${buildProfileResumeContext(userProfile)}`;
         // 從 Chrome extension 匯入 JD（已經在背景分析好）：開 modal 後直接回填欄位
         window.copyAndOpen = (text) => {
             openModal();
-            parseAIText(text);
+            try { fillJobFieldsFromAnalysis(JSON.parse(text)); }
+            catch (e) { console.error(e); showToast('Could not parse analysis result', true); }
         };
 
-        // 強化版解析邏輯：把 AI 分析結果文字直接解析、填進目前已開啟的 Job Modal 欄位
-        window.parseAIText = (rawText) => {
-            if (!rawText) return;
+        function formatAnalysisForDisplay(r) {
+            return [
+                `Title: ${r.title || ''}`,
+                `Company: ${r.company || ''}`,
+                `State: ${r.state || ''}`,
+                `City: ${r.city || ''}`,
+                `Category: ${r.category || ''}`,
+                `Work Style: ${r.workStyle || ''}`,
+                `Salary: ${r.salary || ''}`,
+                `Suggested Resume: ${r.suggestedResume || ''}`,
+                `Resume Reason: ${r.resumeReason || ''}`,
+                `Requirements: ${r.requirements || ''}`,
+                `Responsibility Coverage: ${r.responsibilityCoverage || ''}`,
+                `Keyword Hits: ${r.keywordHits || ''}`,
+                `Keyword Gaps: ${r.keywordGaps || ''}`,
+                `Score: ${r.score ?? ''}`,
+                `Reasoning: ${r.reasoning || ''}`,
+                `Suggestions: ${r.suggestions || ''}`
+            ].join('\n');
+        }
 
-            // 1. 預處理：移除所有 Markdown 符號（如 **）並統一換行
-            const cleanText = rawText.replace(/\*\*/g, '').replace(/#/g, '');
-            const lines = cleanText.split('\n');
-
-            const fieldMap = {
-                "in-score": ["分數", "Score"],
-                "in-title": ["職稱", "Job Title", "Position"],
-                "in-company": ["公司", "Company"],
-                "in-category": ["類別", "Category"],
-                "in-type": ["工作型態", "Type", "Work Style"],
-                "in-salary": ["薪資", "Salary"],
-                "in-job-url": ["URL", "網址", "連結"]
-            };
-
-            // 建議履歷版本：獨立處理（避免被下方「建議」關鍵字的通用比對誤抓進對策備註）
-            const resumeTagLine = lines.find(l => /^建議履歷[:：]/.test(l.trim()));
-            if (resumeTagLine) {
-                const raw = resumeTagLine.split(/[:：]/).slice(1).join(':').trim();
-                const matchedTag = userResumes.map(r => r.tag).find(t => raw.includes(t));
-                if (matchedTag) document.getElementById('in-resume-tag').value = matchedTag;
+        // 把 Gemini JSON 分析結果直接填進目前已開啟的 Job Modal 欄位（取代舊版自由格式文字解析）
+        window.fillJobFieldsFromAnalysis = (r) => {
+            if (!r) return;
+            if (r.title) document.getElementById('in-title').value = r.title;
+            if (r.company) document.getElementById('in-company').value = r.company;
+            if (r.category) document.getElementById('in-category').value = r.category;
+            if (r.workStyle) document.getElementById('in-type').value = r.workStyle;
+            if (r.state) {
+                ensureSelectHasValue('in-state', r.state);
+                document.getElementById('in-state').value = r.state;
             }
-            const resumeReasonLine = lines.find(l => /^履歷理由[:：]/.test(l.trim()));
-            const resumeReason = resumeReasonLine ? resumeReasonLine.split(/[:：]/).slice(1).join(':').trim() : "";
+            if (r.city) document.getElementById('in-city').value = r.city;
+            if (r.salary) document.getElementById('in-salary').value = r.salary;
+            if (r.jobUrl) document.getElementById('in-job-url').value = r.jobUrl;
+            if (typeof r.score === 'number') document.getElementById('in-score').value = r.score;
 
-            // 篩選機率分析欄位：同樣用行首精確比對獨立處理
-            const grabLine = (label) => {
-                const line = lines.find(l => new RegExp(`^${label}[:：]`).test(l.trim()));
-                return line ? line.split(/[:：]/).slice(1).join(':').trim() : "";
-            };
-            const mustHave = grabLine('必要條件');
-            const coverage = grabLine('職責覆蓋');
-            const keywordHits = grabLine('關鍵字命中');
-            const keywordGaps = grabLine('關鍵字缺漏');
-
-            // 逐行匹配
-            lines.forEach(line => {
-                for (const [id, keywords] of Object.entries(fieldMap)) {
-                    for (const kw of keywords) {
-                        if (line.includes(kw)) {
-                            // 抓取冒號後的所有內容
-                            const parts = line.split(/[:：]/);
-                            if (parts.length > 1) {
-                                let val = parts.slice(1).join(':').trim();
-                                // 如果是分數，只拿數字
-                                if (id === "in-score") {
-                                    const scoreMatch = val.match(/[\d.]+/);
-                                    val = scoreMatch ? scoreMatch[0] : val;
-                                }
-                                document.getElementById(id).value = val;
-                                break;
-                            }
-                        }
-                    }
-                }
-            });
-
-            // 處理備註區塊 (理由 + 建議)。用行首精確比對，避免「建議履歷」被「建議」的通用比對誤抓
-            const reasonLines = lines.filter(l => /^(理由|Reason)[:：]/.test(l.trim())).map(l => l.split(/[:：]/).slice(1).join(':').trim());
-            const adviceLines = lines.filter(l => /^(建議|Suggestion)[:：]/.test(l.trim())).map(l => l.split(/[:：]/).slice(1).join(':').trim());
+            const matchedTag = userResumes.map(x => x.tag).find(t => (r.suggestedResume || '').includes(t));
+            if (matchedTag) document.getElementById('in-resume-tag').value = matchedTag;
 
             let notes = "";
-            const resumeTagVal = document.getElementById('in-resume-tag').value;
-            if (resumeTagVal) notes += `[Suggested Resume] ${resumeTagVal}\n${resumeReason}\n\n`;
-            if (mustHave || coverage || keywordHits || keywordGaps) {
-                notes += `[Screening Odds]\nRequirements: ${mustHave || 'Not assessed'}\nResponsibility coverage: ${coverage || 'Not assessed'}\nKeyword hits: ${keywordHits || 'Not assessed'}\nKeyword gaps: ${keywordGaps || 'Not assessed'}\n\n`;
+            if (matchedTag) notes += `[Suggested Resume] ${matchedTag}\n${r.resumeReason || ''}\n\n`;
+            if (r.requirements || r.responsibilityCoverage || r.keywordHits || r.keywordGaps) {
+                notes += `[Screening Odds]\nRequirements: ${r.requirements || 'Not assessed'}\nResponsibility coverage: ${r.responsibilityCoverage || 'Not assessed'}\nKeyword hits: ${r.keywordHits || 'Not assessed'}\nKeyword gaps: ${r.keywordGaps || 'Not assessed'}\n\n`;
             }
-            if (reasonLines.length > 0) notes += `[Reasoning]\n${reasonLines.join('\n')}\n\n`;
-            if (adviceLines.length > 0) notes += `[Suggestions]\n${adviceLines.join('\n')}`;
-
-            if (notes) {
-                document.getElementById('in-notes').value = notes.trim();
-            }
+            if (r.reasoning) notes += `[Reasoning]\n${r.reasoning}\n\n`;
+            if (r.suggestions) notes += `[Suggestions]\n${r.suggestions}`;
+            if (notes) document.getElementById('in-notes').value = notes.trim();
 
             showToast('AI results filled into the form');
         };
@@ -1102,6 +1117,7 @@ ${buildProfileResumeContext(userProfile)}`;
                 resumeTag: document.getElementById('in-resume-tag').value,
                 linkedContactId: document.getElementById('in-linked-contact').value,
                 easyApply: document.getElementById('in-easy-apply').checked,
+                jobDescription: document.getElementById('in-job-description').value.trim() || document.getElementById('modal-jd-input').value.trim(),
                 updatedAt: serverTimestamp()
             };
             try {
@@ -1139,6 +1155,7 @@ ${buildProfileResumeContext(userProfile)}`;
             let filtered = allJobs.filter(j => (j.company + j.title + (j.notes||"")).toLowerCase().includes(search));
             if (activeStatusFilter) filtered = filtered.filter(j => j.status === activeStatusFilter);
             if (workStyle) filtered = filtered.filter(j => j.type === workStyle);
+            if (currentView === 'overview') filtered = jobsInCurrentPeriod(filtered);
             if (selectedOverviewDay) filtered = filtered.filter(j => jobDateKey(j) === selectedOverviewDay);
 
             filtered.sort((a, b) => {
@@ -1178,7 +1195,7 @@ ${buildProfileResumeContext(userProfile)}`;
                         </p>
                     </div>
                     <div class="flex items-center gap-2">
-                        ${contact ? `<button onclick="event.stopPropagation(); showContactPopup('${contact.id}')" class="p-2 text-slate-300 hover:text-indigo-500" title="${escapeHtml([contact.firstName, contact.lastName].filter(Boolean).join(' ') || contact.preferredName || 'Contact')}">
+                        ${contact ? `<button onclick="event.stopPropagation(); showContactPopup('${contact.id}')" class="p-2 text-slate-400 hover:text-indigo-500" title="${escapeHtml([contact.firstName, contact.lastName].filter(Boolean).join(' ') || contact.preferredName || 'Contact')}">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 3.5-6 7-6s6 2 7 6"/></svg>
                         </button>` : ''}
                         ${j.jobUrl ? `<a href="${j.jobUrl}" target="_blank" class="p-2 text-slate-300 hover:text-indigo-500" onclick="event.stopPropagation()">🔗</a>` : ''}
@@ -1218,8 +1235,10 @@ ${buildProfileResumeContext(userProfile)}`;
 
         function renderStatusPills() {
             const container = document.getElementById('status-pills');
-            // 選了某一天時，標籤數字要反映那一天的分布，不是永遠顯示全部資料的總數
-            const base = selectedOverviewDay ? allJobs.filter(j => jobDateKey(j) === selectedOverviewDay) : allJobs;
+            // Overview 頁：標籤數字要跟著目前選取的區間（week/month/year/custom）跟選中的某一天變化，
+            // 不是永遠顯示全部資料的總數；Jobs 頁本身不受 Overview 的區間影響。
+            let base = currentView === 'overview' ? jobsInCurrentPeriod(allJobs) : allJobs;
+            if (selectedOverviewDay) base = base.filter(j => jobDateKey(j) === selectedOverviewDay);
             const counts = {};
             STATUS_VALUES.forEach(s => counts[s] = 0);
             base.forEach(j => { counts[j.status] = (counts[j.status] || 0) + 1; });
@@ -1304,6 +1323,38 @@ ${buildProfileResumeContext(userProfile)}`;
             return days;
         }
 
+        // 依 dashPeriod 把傳入的 jobs 篩成「目前選取區間內」的子集——卡片／圖表／下方共用清單
+        // 都呼叫這個函式，確保三處算出來的數字永遠對得起來。custom 沒設定起訖日時原樣回傳
+        // （= All），這是「取消時間篩選」唯一的機制，不另外做一個分頁。
+        function jobsInCurrentPeriod(jobs) {
+            if (dashPeriod === 'week') {
+                const weekStart = getWeekStart();
+                const start = startOfWeek(overviewWeekAnchor, weekStart);
+                const end = new Date(start); end.setDate(end.getDate() + 6);
+                const startKey = localDateKey(start), endKey = localDateKey(end);
+                return jobs.filter(j => { const k = jobDateKey(j); return k && k >= startKey && k <= endKey; });
+            }
+            if (dashPeriod === 'month') {
+                const y = overviewMonthAnchor.getFullYear(), m = overviewMonthAnchor.getMonth();
+                return jobs.filter(j => { const k = jobDateKey(j); if (!k) return false; const d = new Date(k + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === m; });
+            }
+            if (dashPeriod === 'year') {
+                const y = overviewYearAnchor.getFullYear();
+                return jobs.filter(j => { const k = jobDateKey(j); return k && new Date(k + 'T00:00:00').getFullYear() === y; });
+            }
+            if (dashPeriod === 'custom') {
+                if (!customRangeStart && !customRangeEnd) return jobs; // All
+                return jobs.filter(j => {
+                    const k = jobDateKey(j);
+                    if (!k) return false;
+                    if (customRangeStart && k < customRangeStart) return false;
+                    if (customRangeEnd && k > customRangeEnd) return false;
+                    return true;
+                });
+            }
+            return jobs;
+        }
+
         function overviewPeriodLabel() {
             if (dashPeriod === 'week') {
                 const weekStart = getWeekStart();
@@ -1312,16 +1363,22 @@ ${buildProfileResumeContext(userProfile)}`;
                 const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                 return `${fmt(start)} – ${fmt(end)}`;
             }
-            return overviewMonthAnchor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            if (dashPeriod === 'month') return overviewMonthAnchor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            if (dashPeriod === 'year') return String(overviewYearAnchor.getFullYear());
+            // custom
+            if (!customRangeStart && !customRangeEnd) return 'All';
+            if (customRangeStart && customRangeEnd) return `${customRangeStart} – ${customRangeEnd}`;
+            return customRangeStart ? `From ${customRangeStart}` : `Until ${customRangeEnd}`;
         }
 
-        // 不能翻到「這週之後」／「這個月之後」：以瀏覽器本地今天為基準比較
+        // 不能翻到「這週/這個月/今年之後」：以瀏覽器本地今天為基準比較。custom 沒有 ‹/› 導覽，不會呼叫到這裡。
         function isAtCurrentPeriod() {
+            const today = new Date();
             if (dashPeriod === 'week') {
                 const weekStart = getWeekStart();
-                return startOfWeek(overviewWeekAnchor, weekStart).getTime() === startOfWeek(new Date(), weekStart).getTime();
+                return startOfWeek(overviewWeekAnchor, weekStart).getTime() === startOfWeek(today, weekStart).getTime();
             }
-            const today = new Date();
+            if (dashPeriod === 'year') return overviewYearAnchor.getFullYear() === today.getFullYear();
             return overviewMonthAnchor.getFullYear() === today.getFullYear() && overviewMonthAnchor.getMonth() === today.getMonth();
         }
 
@@ -1330,6 +1387,8 @@ ${buildProfileResumeContext(userProfile)}`;
             if (dashPeriod === 'week') {
                 overviewWeekAnchor = new Date(overviewWeekAnchor);
                 overviewWeekAnchor.setDate(overviewWeekAnchor.getDate() + dir * 7);
+            } else if (dashPeriod === 'year') {
+                overviewYearAnchor = new Date(overviewYearAnchor.getFullYear() + dir, 0, 1);
             } else {
                 overviewMonthAnchor = new Date(overviewMonthAnchor.getFullYear(), overviewMonthAnchor.getMonth() + dir, 1);
             }
@@ -1341,6 +1400,7 @@ ${buildProfileResumeContext(userProfile)}`;
         window.jumpToToday = () => {
             overviewWeekAnchor = new Date();
             overviewMonthAnchor = new Date();
+            overviewYearAnchor = new Date();
             selectedOverviewDay = null;
             updateDashboard(allJobs);
             render();
@@ -1349,6 +1409,26 @@ ${buildProfileResumeContext(userProfile)}`;
         window.setDashPeriod = (p) => {
             dashPeriod = p;
             selectedOverviewDay = null;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        window.setCustomRangeStart = (v) => {
+            customRangeStart = v || null;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        window.setCustomRangeEnd = (v) => {
+            customRangeEnd = v || null;
+            updateDashboard(allJobs);
+            render();
+        };
+
+        window.clearCustomRange = () => {
+            customRangeStart = null; customRangeEnd = null;
+            document.getElementById('dash-custom-start').value = '';
+            document.getElementById('dash-custom-end').value = '';
             updateDashboard(allJobs);
             render();
         };
@@ -1365,6 +1445,8 @@ ${buildProfileResumeContext(userProfile)}`;
             render();
         };
 
+        // Week（跟 Year/Custom 的 renderStatusBarChart）共用同一個 canvas／Chart 實例，但點擊行為不同
+        // （點某天 vs 點某個狀態），每次重繪都要明確重新指定 onClick，不能只在建立時設一次。
         function renderWeekChart(jobs) {
             const buckets = buildWeekBuckets(jobs);
             currentDashBuckets = buckets;
@@ -1375,6 +1457,12 @@ ${buildProfileResumeContext(userProfile)}`;
                 if (b.isToday) return '#6366f1';
                 return '#c7d2fe';
             });
+            const onClick = (evt, elements) => {
+                if (!elements.length) return;
+                const b = currentDashBuckets[elements[0].index];
+                if (!b) return;
+                window.selectOverviewDay(b.date);
+            };
 
             // 更新既有 Chart 實例而不是每次都 destroy+recreate：避免帳號切換時
             // 舊/新 onSnapshot callback 幾乎同時各呼叫一次 updateDashboard()，兩邊同時
@@ -1383,6 +1471,7 @@ ${buildProfileResumeContext(userProfile)}`;
                 dashChartInstance.data.labels = labels;
                 dashChartInstance.data.datasets[0].data = data;
                 dashChartInstance.data.datasets[0].backgroundColor = colors;
+                dashChartInstance.options.onClick = onClick;
                 dashChartInstance.update();
             } else {
                 const ctx = document.getElementById('dash-chart');
@@ -1393,12 +1482,40 @@ ${buildProfileResumeContext(userProfile)}`;
                         responsive: true, maintainAspectRatio: false,
                         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.parsed.y} application${c.parsed.y === 1 ? '' : 's'}` } } },
                         scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-                        onClick: (evt, elements) => {
-                            if (!elements.length) return;
-                            const b = currentDashBuckets[elements[0].index];
-                            if (!b) return;
-                            window.selectOverviewDay(b.date);
-                        }
+                        onClick
+                    }
+                });
+            }
+        }
+
+        // Year／Custom：依狀態分的長條圖（不是依日期），點某根長條跟狀態卡片一樣呼叫 setStatusFilter
+        function renderStatusBarChart(jobs) {
+            const labels = STATUS_VALUES.map(s => STATUS_LABELS[s]);
+            const data = STATUS_VALUES.map(s => jobs.filter(j => j.status === s).length);
+            const colors = STATUS_VALUES.map(s => activeStatusFilter === s ? '#3730a3' : '#c7d2fe');
+            const onClick = (evt, elements) => {
+                if (!elements.length) return;
+                const s = STATUS_VALUES[elements[0].index];
+                if (!s) return;
+                window.setStatusFilter(s);
+            };
+
+            if (dashChartInstance) {
+                dashChartInstance.data.labels = labels;
+                dashChartInstance.data.datasets[0].data = data;
+                dashChartInstance.data.datasets[0].backgroundColor = colors;
+                dashChartInstance.options.onClick = onClick;
+                dashChartInstance.update();
+            } else {
+                const ctx = document.getElementById('dash-chart');
+                dashChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 6 }] },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.parsed.y} application${c.parsed.y === 1 ? '' : 's'}` } } },
+                        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                        onClick
                     }
                 });
             }
@@ -1434,14 +1551,19 @@ ${buildProfileResumeContext(userProfile)}`;
         }
 
         function updateDashboard(jobs) {
-            document.getElementById('dash-tab-week').className = `px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors ${dashPeriod === 'week' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`;
-            document.getElementById('dash-tab-month').className = `px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors ${dashPeriod === 'month' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`;
+            ['week', 'month', 'year', 'custom'].forEach(p => {
+                document.getElementById(`dash-tab-${p}`).className = `px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-colors ${dashPeriod === p ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`;
+            });
             const weekStart = getWeekStart();
             document.getElementById('week-start-mon').className = `px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors ${weekStart === 'monday' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-400'}`;
             document.getElementById('week-start-sun').className = `px-3 py-1 rounded-full text-[10px] font-black uppercase transition-colors ${weekStart === 'sunday' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-400'}`;
+            document.getElementById('week-start-toggle').classList.toggle('hidden', dashPeriod === 'year' || dashPeriod === 'custom');
 
-            const cards = [{ value: null, label: 'Total', count: jobs.length, color: 'text-slate-800' }]
-                .concat(STATUS_VALUES.map(s => ({ value: s, label: STATUS_LABELS[s], count: jobs.filter(j => j.status === s).length, color: 'text-indigo-600' })));
+            // 7 張卡片現在是「區間感知」的：跟著 week/month/year 選到的區間變動；custom 沒設定起訖日
+            // （= All）時 periodJobs 就是全部資料，卡片自然變回全部資料的總數，不用額外特判。
+            const periodJobs = jobsInCurrentPeriod(jobs);
+            const cards = [{ value: null, label: 'Total', count: periodJobs.length, color: 'text-slate-800' }]
+                .concat(STATUS_VALUES.map(s => ({ value: s, label: STATUS_LABELS[s], count: periodJobs.filter(j => j.status === s).length, color: 'text-indigo-600' })));
             document.getElementById('stats-container').innerHTML = cards.map(c => `
                 <div onclick="setStatusFilter(${c.value ? `'${c.value}'` : 'null'})" class="dash-card glass p-3 rounded-xl text-center shadow-sm ${activeStatusFilter === c.value ? 'active' : ''}">
                     <p class="text-[9px] font-black text-slate-400 uppercase mb-0.5 truncate">${c.label}</p>
@@ -1450,25 +1572,45 @@ ${buildProfileResumeContext(userProfile)}`;
 
             document.getElementById('overview-period-label').textContent = overviewPeriodLabel();
             // Month 熱力圖格子小，卡片跟著縮窄置中，不然寬版卡片裡小月曆兩側會留一大片空白
-            document.getElementById('dash-period-card').style.maxWidth = dashPeriod === 'week' ? '640px' : '420px';
-            document.getElementById('dash-nav-next').disabled = isAtCurrentPeriod();
+            document.getElementById('dash-period-card').style.maxWidth = dashPeriod === 'month' ? '420px' : '640px';
 
-            // 圖表/熱力圖的「每日筆數」預設只算 Applied，點了某張狀態卡片才改算那個狀態
-            // （Total 不是狀態，點 Total 時 activeStatusFilter 是 null，退回預設 Applied）
-            const chartStatus = activeStatusFilter || 'applied';
-            const chartJobs = jobs.filter(j => j.status === chartStatus);
-            document.getElementById('dash-chart-status-label').textContent = STATUS_LABELS[chartStatus];
+            // Custom 沒有 ‹/Today/› 導覽（任意區間，翻頁沒有意義），改顯示起訖日期選擇器
+            const isCustom = dashPeriod === 'custom';
+            document.getElementById('dash-nav-default').classList.toggle('hidden', isCustom);
+            document.getElementById('dash-custom-range').classList.toggle('hidden', !isCustom);
+            if (isCustom) {
+                document.getElementById('dash-custom-start').value = customRangeStart || '';
+                document.getElementById('dash-custom-end').value = customRangeEnd || '';
+            } else {
+                document.getElementById('dash-nav-next').disabled = isAtCurrentPeriod();
+            }
 
             const chartWrap = document.getElementById('dash-chart-wrap');
             const calendarWrap = document.getElementById('dash-calendar');
-            if (dashPeriod === 'week') {
-                chartWrap.classList.remove('hidden');
-                calendarWrap.classList.add('hidden');
-                renderWeekChart(chartJobs);
-            } else {
+            const statusLabel = document.getElementById('dash-chart-status-label');
+
+            if (dashPeriod === 'month') {
+                // 圖表/熱力圖的「每日筆數」預設只算 Applied，點了某張狀態卡片才改算那個狀態
+                // （Total 不是狀態，點 Total 時 activeStatusFilter 是 null，退回預設 Applied）
+                const chartStatus = activeStatusFilter || 'applied';
+                statusLabel.textContent = STATUS_LABELS[chartStatus];
+                statusLabel.classList.remove('hidden');
                 chartWrap.classList.add('hidden');
                 calendarWrap.classList.remove('hidden');
-                renderMonthHeatmap(chartJobs);
+                renderMonthHeatmap(periodJobs.filter(j => j.status === chartStatus));
+            } else if (dashPeriod === 'week') {
+                const chartStatus = activeStatusFilter || 'applied';
+                statusLabel.textContent = STATUS_LABELS[chartStatus];
+                statusLabel.classList.remove('hidden');
+                chartWrap.classList.remove('hidden');
+                calendarWrap.classList.add('hidden');
+                renderWeekChart(periodJobs.filter(j => j.status === chartStatus));
+            } else {
+                // year／custom：畫「依狀態分」的長條圖＋總數，不畫日曆/熱力圖，所以沒有「目前算哪個狀態」這個概念
+                statusLabel.classList.add('hidden');
+                chartWrap.classList.remove('hidden');
+                calendarWrap.classList.add('hidden');
+                renderStatusBarChart(periodJobs);
             }
 
             renderUpcomingInterviews(jobs);
@@ -1495,6 +1637,7 @@ ${buildProfileResumeContext(userProfile)}`;
             if (v === 'overview') {
                 overviewWeekAnchor = new Date();
                 overviewMonthAnchor = new Date();
+                overviewYearAnchor = new Date();
                 selectedOverviewDay = null;
                 dashPeriod = 'week';
                 updateDashboard(allJobs);
@@ -1553,7 +1696,6 @@ ${buildProfileResumeContext(userProfile)}`;
 
         function toggleAISection(show) {
             document.getElementById('modal-ai-section').classList.toggle('hidden', !show);
-            document.getElementById('btn-generate-resume').classList.toggle('hidden', !show);
         }
 
         window.toggleInterviewFields = () => {
@@ -1587,6 +1729,7 @@ ${buildProfileResumeContext(userProfile)}`;
             document.getElementById('in-category').value = j.category || "";
             ensureSelectHasValue('in-type', j.type);
             document.getElementById('in-type').value = j.type || "";
+            ensureSelectHasValue('in-state', j.state);
             document.getElementById('in-state').value = j.state || "";
             document.getElementById('in-city').value = j.city || "";
             document.getElementById('in-status').value = normalizeStatus(j.status) || "not_applied";
@@ -1601,6 +1744,7 @@ ${buildProfileResumeContext(userProfile)}`;
             document.getElementById('in-notes').value = j.notes || "";
             document.getElementById('in-resume-tag').value = j.resumeTag || "";
             document.getElementById('in-linked-contact').value = j.linkedContactId || "";
+            document.getElementById('in-job-description').value = j.jobDescription || "";
             document.getElementById('in-easy-apply').checked = !!j.easyApply;
             document.getElementById('btn-delete').classList.remove('hidden');
             toggleAISection(false);
@@ -1686,10 +1830,11 @@ ${buildProfileResumeContext(userProfile)}`;
             }
             const data = {
                 title: p.title || "", company: p.company || "", category: p.category || "",
-                type: p.type || "", state: "", city: "", status: "not_applied", applyDate: "",
+                type: p.type || "", state: p.state || "", city: p.city || "", status: "not_applied", applyDate: "",
                 channel: "", interviewStage: "", nextInterviewDate: "", score: parseFloat(p.score) || 0,
                 salary: p.salary || "", jobUrl: p.jobUrl || "", network: "",
                 notes: p.notes || "", resumeTag: p.resumeTag || "", easyApply: !!p.easyApply,
+                jobDescription: p.jobDescription || "",
                 createdAt: serverTimestamp(), updatedAt: serverTimestamp()
             };
             try {
@@ -2054,6 +2199,7 @@ ${buildProfileResumeContext(userProfile)}`;
 
         // 把結構化 Profile 轉成條列純文字，餵給 Gemini 當作「唯一允許引用的真實經歷事實」
         function buildProfileResumeContext(p) {
+            if (!profileHasAnyData(p)) return "(No profile information provided yet.)";
             const lines = [];
             lines.push(`Name: ${p.fullName || ''}`);
             if (p.email) lines.push(`Email: ${p.email}`);

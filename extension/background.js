@@ -1,6 +1,16 @@
 const TRACKER_URL = "https://ypc0701-cmyk.github.io/Job-searching-tracker/";
 const RESUME_TAGS = ["Business Intelligence", "Communication", "Data Analytics", "Marketing Analytics", "Product Management", "Supply Chain"];
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+// 跟 index.html 的 US_STATES 保持一致（兩份各自維護，extension 沒有連到 Firestore 沒辦法共用常數）
+const US_STATES = [
+    'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
+    'District of Columbia', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa',
+    'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota',
+    'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey',
+    'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon',
+    'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah',
+    'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'
+];
 const isOverloaded = (status, msg) => status === 503 || status === 429 || /high demand|overloaded/i.test(msg || "");
 
 function notify(title, message) {
@@ -256,7 +266,9 @@ ${resumeSection}
 請嚴格遵守以下格式與順序輸出，不要加任何其他文字（每個欄位限一行，多個項目用頓號分隔）：
 職稱: [名稱]
 公司: [名稱]
-類別: [Intern/Full-time]
+州: [只能是以下清單其中之一：${US_STATES.join('、')}；JD 沒提到或不是美國地點就留空]
+城市: [城市名，JD 沒提到就留空]
+類別: [Intern/Full-time，必須只根據 JD 原文的職稱與內文判斷（例如職稱或內文出現 Intern/Internship/實習/co-op 等字樣才填 Intern，否則填 Full-time）；不可因為候選人背景是學生就預設填 Intern，JD 完全沒提到的話就留空]
 工作型態: [On-site/Remote/Hybrid]
 薪資: [範圍，未提供則寫 未提供]
 建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
@@ -294,11 +306,14 @@ ${resumeSection}
         const payload = {
             title: job.title || grab('職稱'),
             company: job.company || grab('公司'),
+            state: grab('州'),
+            city: grab('城市'),
             category: grab('類別'),
             type: grab('工作型態'),
             score: parseFloat((scoreRaw.match(/[\d.]+/) || [0])[0]) || 0,
             salary: grab('薪資'),
             jobUrl: job.url,
+            jobDescription: job.jd,
             resumeTag,
             easyApply: job.easyApply,
             notes: `${job.closed ? '⚠️【注意】此職缺已停止收件（No longer accepting applications）\n\n' : ''}【建議履歷】${resumeTag || resumeTagRaw}\n${grab('履歷理由')}\n\n【篩選機率分析】\n必要條件：${grab('必要條件') || '未評估'}\n職責覆蓋：${grab('職責覆蓋') || '未評估'}\n關鍵字命中：${grab('關鍵字命中') || '未評估'}\n關鍵字缺漏：${grab('關鍵字缺漏') || '未評估'}\n\n【分析理由】\n${grab('理由')}\n\n【對策建議】\n${grab('建議')}`
