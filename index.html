@@ -1308,6 +1308,29 @@ ${buildProfileResumeContext(userProfile)}`;
             return buckets;
         }
 
+        // Year 分頁：12 個月份各一個 bucket（取代原本依狀態分的長條圖）
+        function buildYearMonthBuckets(jobs) {
+            const year = overviewYearAnchor.getFullYear();
+            const today = new Date();
+            const counts = new Array(12).fill(0);
+            jobs.forEach(j => {
+                const k = jobDateKey(j);
+                if (!k) return;
+                const d = new Date(k + 'T00:00:00');
+                if (d.getFullYear() === year) counts[d.getMonth()]++;
+            });
+            const buckets = [];
+            for (let m = 0; m < 12; m++) {
+                buckets.push({
+                    date: `${year}-${String(m + 1).padStart(2, '0')}`,
+                    label: new Date(year, m, 1).toLocaleDateString('en-US', { month: 'short' }),
+                    count: counts[m],
+                    isCurrentMonth: year === today.getFullYear() && m === today.getMonth()
+                });
+            }
+            return buckets;
+        }
+
         function buildMonthHeatmap(jobs) {
             const weekStart = getWeekStart();
             const year = overviewMonthAnchor.getFullYear(), month = overviewMonthAnchor.getMonth();
@@ -1488,7 +1511,48 @@ ${buildProfileResumeContext(userProfile)}`;
             }
         }
 
-        // Year／Custom：依狀態分的長條圖（不是依日期），點某根長條跟狀態卡片一樣呼叫 setStatusFilter
+        // Year：12 個月份各一根 bar，點某個月直接切到 Month 分頁看該月的熱力圖（跟點 Week 的某天
+        // 篩清單不同，Year 的顆粒度是月，drill-down 下去是「看那個月」，不是在原地篩選清單）。
+        function renderYearChart(jobs) {
+            const buckets = buildYearMonthBuckets(jobs);
+            currentDashBuckets = buckets;
+            const labels = buckets.map(b => b.label);
+            const data = buckets.map(b => b.count);
+            const colors = buckets.map(b => b.isCurrentMonth ? '#6366f1' : '#c7d2fe');
+            const onClick = (evt, elements) => {
+                if (!elements.length) return;
+                const b = currentDashBuckets[elements[0].index];
+                if (!b) return;
+                const [y, m] = b.date.split('-').map(Number);
+                overviewMonthAnchor = new Date(y, m - 1, 1);
+                dashPeriod = 'month';
+                selectedOverviewDay = null;
+                updateDashboard(allJobs);
+                render();
+            };
+
+            if (dashChartInstance) {
+                dashChartInstance.data.labels = labels;
+                dashChartInstance.data.datasets[0].data = data;
+                dashChartInstance.data.datasets[0].backgroundColor = colors;
+                dashChartInstance.options.onClick = onClick;
+                dashChartInstance.update();
+            } else {
+                const ctx = document.getElementById('dash-chart');
+                dashChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 6 }] },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.parsed.y} application${c.parsed.y === 1 ? '' : 's'}` } } },
+                        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                        onClick
+                    }
+                });
+            }
+        }
+
+        // Custom：依狀態分的長條圖（不是依日期），點某根長條跟狀態卡片一樣呼叫 setStatusFilter
         function renderStatusBarChart(jobs) {
             const labels = STATUS_VALUES.map(s => STATUS_LABELS[s]);
             const data = STATUS_VALUES.map(s => jobs.filter(j => j.status === s).length);
@@ -1605,8 +1669,16 @@ ${buildProfileResumeContext(userProfile)}`;
                 chartWrap.classList.remove('hidden');
                 calendarWrap.classList.add('hidden');
                 renderWeekChart(periodJobs.filter(j => j.status === chartStatus));
+            } else if (dashPeriod === 'year') {
+                // Year：12 個月份各一根 bar，跟 Week/Month 一樣預設只算 Applied，點狀態卡片才換算別的狀態
+                const chartStatus = activeStatusFilter || 'applied';
+                statusLabel.textContent = STATUS_LABELS[chartStatus];
+                statusLabel.classList.remove('hidden');
+                chartWrap.classList.remove('hidden');
+                calendarWrap.classList.add('hidden');
+                renderYearChart(periodJobs.filter(j => j.status === chartStatus));
             } else {
-                // year／custom：畫「依狀態分」的長條圖＋總數，不畫日曆/熱力圖，所以沒有「目前算哪個狀態」這個概念
+                // custom：畫「依狀態分」的長條圖＋總數，不畫日曆/月份長條，所以沒有「目前算哪個狀態」這個概念
                 statusLabel.classList.add('hidden');
                 chartWrap.classList.remove('hidden');
                 calendarWrap.classList.add('hidden');
