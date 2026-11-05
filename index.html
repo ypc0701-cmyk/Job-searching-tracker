@@ -361,6 +361,7 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M14 6l-6 6 6 6"/></svg> Back
                     </button>
                     <div class="flex items-center gap-4">
+                        <button id="resume-template-btn" onclick="toggleTemplateResume()" class="text-xs font-bold text-slate-400 hover:text-indigo-600 uppercase tracking-wider">Set as Template</button>
                         <button id="resume-edit-btn" onclick="startEditResume()" class="text-xs font-bold text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Edit</button>
                         <button onclick="deleteResume()" class="text-xs font-bold text-red-400 hover:text-red-600 uppercase tracking-wider">Delete</button>
                         <button onclick="closeResumeManager()" class="text-slate-300 hover:text-slate-500 text-xl transition-colors">✕</button>
@@ -973,7 +974,7 @@
             const systemPrompt = `You are a professional resume writer. You may ONLY use the facts given below about this person — never invent experience, titles, companies, numbers, or skills that are not present in the facts. Tailor the wording and emphasis to match the target job description, highlighting the most relevant experience. Output ONLY the full resume text itself, with no preamble, no explanation, and no closing remarks.
 
 Candidate facts (the only source of truth):
-${buildProfileResumeContext(userProfile)}`;
+${buildProfileResumeContext(userProfile)}${buildResumeTemplateContext()}`;
 
             try {
                 const resumeText = (await callGemini(apiKey, {
@@ -1974,7 +1975,7 @@ ${buildProfileResumeContext(userProfile)}`;
             }
             list.innerHTML = userResumes.map(r => `
                 <button onclick="openResumeDetail('${r.id}')" class="w-full text-left flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors">
-                    <p class="font-bold text-sm text-slate-700">${escapeHtml(r.tag)}</p>
+                    <p class="font-bold text-sm text-slate-700">${r.id === userProfile.templateResumeId ? '★ ' : ''}${escapeHtml(r.tag)}</p>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-slate-300 shrink-0"><path d="M9 6l6 6-6 6"/></svg>
                 </button>`).join('');
         }
@@ -2025,6 +2026,28 @@ ${buildProfileResumeContext(userProfile)}`;
             renderResumeManager();
         };
 
+        // 標示/取消標示某份履歷為「排版範本」：Generate Resume 會模仿這份履歷的格式
+        function updateTemplateBtn(id) {
+            const btn = document.getElementById('resume-template-btn');
+            if (!id) { btn.classList.add('hidden'); return; }
+            btn.classList.remove('hidden');
+            const isTemplate = userProfile.templateResumeId === id;
+            btn.textContent = isTemplate ? '★ Template' : 'Set as Template';
+            btn.classList.toggle('text-indigo-600', isTemplate);
+            btn.classList.toggle('text-slate-400', !isTemplate);
+        }
+
+        window.toggleTemplateResume = async () => {
+            const id = document.getElementById('in-resume-edit-id').value;
+            if (!id || !currentUser) return;
+            const next = userProfile.templateResumeId === id ? null : id;
+            try {
+                await setDoc(profileRef(), { templateResumeId: next }, { merge: true });
+                updateTemplateBtn(id);
+                showToast(next ? 'Set as resume template' : 'Removed as template');
+            } catch (e) { console.error(e); showToast('Failed: ' + e.message, true); }
+        };
+
         // 從清單點進一份既有履歷：唯讀 detail 視圖，點 Edit 才能改
         window.openResumeDetail = (id) => {
             const r = userResumes.find(x => x.id === id);
@@ -2034,6 +2057,7 @@ ${buildProfileResumeContext(userProfile)}`;
             document.getElementById('in-resume-edit-text').value = r.text || "";
             document.getElementById('resume-detail-title').textContent = r.tag || "";
             document.getElementById('resume-detail-text-readonly').textContent = r.text || "";
+            updateTemplateBtn(id);
             exitResumeEditMode();
             showResumeDetailView();
         };
@@ -2045,6 +2069,7 @@ ${buildProfileResumeContext(userProfile)}`;
             document.getElementById('in-resume-edit-text').value = "";
             document.getElementById('resume-detail-title').textContent = "";
             document.getElementById('resume-detail-text-readonly').textContent = "";
+            updateTemplateBtn("");
             enterResumeEditMode(true);
             showResumeDetailView();
         };
@@ -2064,6 +2089,7 @@ ${buildProfileResumeContext(userProfile)}`;
                 } else {
                     const ref = await addDoc(resumesCol, { tag, text, updatedAt: serverTimestamp() });
                     document.getElementById('in-resume-edit-id').value = ref.id;
+                    updateTemplateBtn(ref.id);
                 }
                 document.getElementById('resume-detail-title').textContent = tag;
                 document.getElementById('resume-detail-text-readonly').textContent = text;
@@ -2079,6 +2105,9 @@ ${buildProfileResumeContext(userProfile)}`;
             if (!confirm('Delete this resume?')) return;
             try {
                 await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'resumes', id));
+                if (userProfile.templateResumeId === id) {
+                    await setDoc(profileRef(), { templateResumeId: null }, { merge: true });
+                }
                 showToast('Deleted');
                 window.backToResumeList();
             } catch (e) { console.error(e); showToast('Delete failed: ' + e.message, true); }
@@ -2300,6 +2329,36 @@ ${buildProfileResumeContext(userProfile)}`;
 
         function isProfileComplete(p) {
             return !!(p.fullName && p.email && p.phone && p.experience?.length && p.education?.length);
+        }
+
+        // 沒有指定排版範本時的預設骨架：只保留版面結構（章節順序、兩欄式標題/日期、條列符號），
+        // 移除真實姓名、聯絡方式與實際經歷內容，避免每次生成都把個人資料帶進 prompt
+        const DEFAULT_RESUME_TEMPLATE = `EDUCATION
+[Degree], [Field of Study]                         [Month Year]
+[University Name], [City, State]                   GPA: [X.XX]
+
+WORK EXPERIENCE
+[Job Title]                                         [Month Year] to [Month Year]
+[Company Name]                                      [City, State]
+• [Bullet describing a core responsibility, ideally with a measurable result]
+• [Bullet]
+• [Bullet]
+
+ACADEMIC PROJECTS
+[Project Title]                                     [Month Year] to [Month Year]
+[Project Type / Course Code]                        [City, State]
+• [Bullet describing the project]
+
+SKILLS
+Skills: [Tool], [Tool], [Tool]
+AI Tools: [Tool], [Tool]`;
+
+        // 使用者在「我的履歷」手動指定的排版範本：只借用格式/結構，不當作事實來源；
+        // 沒有指定時退回上面這份已清空個人資料的骨架
+        function buildResumeTemplateContext() {
+            const r = userResumes.find(x => x.id === userProfile.templateResumeId);
+            const templateText = (r && r.text) ? r.text : DEFAULT_RESUME_TEMPLATE;
+            return `\n\nFormat and structure the resume to closely follow the section order, headings, and bullet style of this example resume layout. Use it ONLY as a formatting and structure guide — never copy its facts, employers, titles, or wording into the output:\n${templateText}`;
         }
 
         // 把結構化 Profile 轉成條列純文字，餵給 Gemini 當作「唯一允許引用的真實經歷事實」
