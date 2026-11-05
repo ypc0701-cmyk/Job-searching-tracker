@@ -392,6 +392,18 @@
 
             <div id="profile-incomplete-banner" class="hidden bg-amber-50 border border-amber-100 text-amber-600 text-xs font-bold px-4 py-3 rounded-xl mb-6">Your profile isn't complete yet. Fill in your name, email, phone, and at least one experience and education entry before AI can generate tailored resumes.</div>
 
+            <div class="bg-indigo-50/50 p-5 rounded-2xl mb-8 border border-indigo-100/50">
+                <div class="flex justify-between items-center mb-2">
+                    <p class="text-[10px] font-bold text-indigo-400 uppercase">Chat with AI about your Profile</p>
+                    <button onclick="clearProfileChat()" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors">Clear chat</button>
+                </div>
+                <div id="profile-chat-messages" class="flex flex-col gap-3 max-h-80 overflow-y-auto mb-3 pr-1"></div>
+                <div class="flex gap-2">
+                    <input id="profile-chat-input" class="input-field text-xs bg-white/80" placeholder="e.g. Add a job at Google as Product Manager, 2023 to 2024" onkeydown="if(event.key==='Enter') sendProfileChatMessage()">
+                    <button id="profile-chat-send" onclick="sendProfileChatMessage()" class="px-4 text-xs font-bold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">Send</button>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Full Name</label><input id="in-profile-name" class="input-field"></div>
                 <div><label class="text-[10px] font-bold text-slate-400 uppercase ml-1">Email</label><input id="in-profile-email" class="input-field"></div>
@@ -581,6 +593,9 @@
         let unsubProfile = null;
         let profileModalOpen = false;
         let currentEditSection = null;
+
+        // Profile AI 聊天室：只存在前端記憶體，重新整理頁面會清空，關掉 Profile 彈窗再打開不會清空
+        let profileChatMessages = [];
 
         // Network（聯絡人追蹤）
         let userContacts = [];
@@ -2462,6 +2477,7 @@ AI Tools: [Tool], [Tool]`;
             profileModalOpen = true;
             closeEntryForm();
             renderProfile();
+            renderProfileChat();
             document.getElementById('profile-modal').classList.replace('hidden', 'flex');
         };
 
@@ -2674,6 +2690,158 @@ JSON 格式：
             } finally {
                 btn.disabled = false;
             }
+        };
+
+        // 動態從 ENTRY_FIELDS 組出每個 section 的欄位說明，避免跟表單本身的欄位定義兩邊維護到不同步
+        function buildProfileChatSystemPrompt() {
+            const sectionSchemas = Object.keys(ENTRY_FIELDS).map(section => {
+                const fields = ENTRY_FIELDS[section].map(f => `${f.key}${f.type === 'select' ? ` (只能是：${f.options.join(' / ')})` : ''}`).join('、');
+                return `  - "${section}"（${SECTION_LABELS[section]}）欄位：${fields}`;
+            }).join('\n');
+
+            const { updatedAt, ...profileData } = userProfile;
+
+            return `妳是 Chloe 的 Profile 編輯助手。妳可以跟她聊天討論，也可以在她明確要求新增/修改/刪除某一筆經歷、學歷等資料時，提出具體的修改建議。妳的建議不會自動套用，Chloe 看過、確認後才會真的存檔，所以可以放心提出建議。
+
+絕對不可以編造她沒有提到的經歷、公司、數字或細節——只能使用她在對話裡親口提供的事實，或是她現有 Profile 裡已經有的內容。不確定的話就在 reply 裡用問題澄清，action 給 null。
+
+她目前的 Profile 內容（JSON，給妳對照，update/delete 時要用裡面現有的 id 去指定要改哪一筆）：
+${JSON.stringify(profileData)}
+
+可以操作的 section 與各自欄位：
+${sectionSchemas}
+  - "basic"（基本資料）欄位：fullName、email、phone
+
+妳的回覆一定要是以下 JSON 格式，不要加任何其他文字：
+{
+  "reply": "給 Chloe 看的自然語言回覆",
+  "action": null，或者當她明確要求改動時給：{
+    "op": "add" 或 "update" 或 "delete",
+    "section": "experience/education/languages/organizations/projects 其中一個，或 basic",
+    "id": "op 是 update 或 delete 時，填現有那筆資料的 id；op 是 add 或 section 是 basic 時填空字串",
+    "data": op 是 delete 時給 null，否則給一個物件，欄位照上面列出的欄位名稱（update 時只需要給想改的欄位，其他會保留原值）
+  }
+}
+單純聊天、澄清問題、或她還沒明確說要改什麼的時候，action 給 null。`;
+        }
+
+        window.sendProfileChatMessage = async () => {
+            const input = document.getElementById('profile-chat-input');
+            const text = input.value.trim();
+            if (!text || !currentUser) return;
+            const apiKey = localStorage.getItem('chloe_gemini_key') || "";
+            if (!apiKey) { showSetup(); return; }
+
+            profileChatMessages.push({ role: 'user', text });
+            input.value = '';
+            renderProfileChat();
+
+            const sendBtn = document.getElementById('profile-chat-send');
+            sendBtn.disabled = true;
+            try {
+                const contents = profileChatMessages.map(m => ({ role: m.role, parts: [{ text: m.text }] }));
+                const aiText = await callGemini(apiKey, {
+                    contents,
+                    systemInstruction: { parts: [{ text: buildProfileChatSystemPrompt() }] },
+                    generationConfig: { responseMimeType: "application/json" }
+                }, (msg) => showToast(msg));
+
+                const stripped = aiText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+                let parsed;
+                try {
+                    parsed = JSON.parse(stripped);
+                } catch (e) {
+                    profileChatMessages.push({ role: 'model', text: 'Gemini 回覆格式不對，沒有套用任何變更。原始回覆：\n' + aiText.slice(0, 500), action: null });
+                    renderProfileChat();
+                    return;
+                }
+                profileChatMessages.push({ role: 'model', text: parsed.reply || '', action: parsed.action || null });
+                renderProfileChat();
+            } catch (e) {
+                console.error(e);
+                profileChatMessages.push({ role: 'model', text: '發生錯誤：' + e.message, action: null });
+                renderProfileChat();
+            } finally {
+                sendBtn.disabled = false;
+            }
+        };
+
+        // 用 action.section/id 去現有 Profile 查出目前名稱，當「建議：修改／刪除 XXX」的標籤內容，方便套用前核對是不是認錯對象
+        function describeProfileChatAction(action) {
+            if (action.section === 'basic') return `${action.op === 'update' ? '修改' : '新增'}基本資料`;
+            const verb = { add: '新增', update: '修改', delete: '刪除' }[action.op] || action.op;
+            const label = SECTION_LABELS[action.section] || action.section;
+            if (action.op === 'add') return `${verb} ${label}`;
+            const existing = (userProfile[action.section] || []).find(x => x.id === action.id);
+            const name = existing ? (existing.title || existing.degree || existing.role || existing.language || '') : '（找不到這筆資料，可能已經被改過或刪除）';
+            return `${verb} ${label}${name ? ` — ${name}` : ''}`;
+        }
+
+        function renderProfileChat() {
+            const box = document.getElementById('profile-chat-messages');
+            if (!box) return;
+            box.innerHTML = profileChatMessages.map((m, i) => {
+                const bubble = `<div class="${m.role === 'user' ? 'bg-indigo-500 text-white self-end' : 'bg-white text-slate-700'} text-xs px-3 py-2 rounded-xl max-w-[90%] whitespace-pre-wrap">${escapeHtml(m.text)}</div>`;
+                if (m.role !== 'model' || !m.action) {
+                    return `<div class="flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}">${bubble}</div>`;
+                }
+                const actionBlock = `
+                    <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mt-1 max-w-[90%]">
+                        <p class="text-[10px] font-bold text-indigo-400 uppercase mb-2">建議：${escapeHtml(describeProfileChatAction(m.action))}</p>
+                        ${m.action.op !== 'delete' ? `<textarea id="chat-action-data-${i}" rows="5" class="input-field font-mono text-[11px] mb-2">${escapeHtml(JSON.stringify(m.action.data || {}, null, 2))}</textarea>` : ''}
+                        ${m.applied
+                            ? `<p class="text-[10px] font-bold text-green-500">已套用</p>`
+                            : `<div class="flex gap-3">
+                                   <button onclick="applyProfileChatAction(${i})" class="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 uppercase tracking-wider">Apply to Profile</button>
+                                   <button onclick="discardProfileChatAction(${i})" class="text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wider">Discard</button>
+                               </div>`}
+                    </div>`;
+                return `<div class="flex flex-col items-start gap-1">${bubble}${actionBlock}</div>`;
+            }).join('') || `<p class="text-xs text-slate-300 italic">Ask the AI to add, change, or remove something in your Profile.</p>`;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        window.discardProfileChatAction = (msgIndex) => {
+            const msg = profileChatMessages[msgIndex];
+            if (msg) msg.action = null;
+            renderProfileChat();
+        };
+
+        window.applyProfileChatAction = async (msgIndex) => {
+            const msg = profileChatMessages[msgIndex];
+            if (!msg?.action || !currentUser) return;
+            const { op, section, id } = msg.action;
+            let data = null;
+            if (op !== 'delete') {
+                const ta = document.getElementById(`chat-action-data-${msgIndex}`);
+                try { data = JSON.parse(ta.value); }
+                catch (e) { showToast('不是合法的 JSON，請修正後再 Apply', true); return; }
+            }
+            try {
+                if (section === 'basic') {
+                    await setDoc(profileRef(), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+                } else {
+                    const list = [...(userProfile[section] || [])];
+                    if (op === 'add') {
+                        list.push({ ...data, id: crypto.randomUUID() });
+                    } else {
+                        const idx = list.findIndex(x => x.id === id);
+                        if (idx === -1) { showToast('這筆資料已經不存在了', true); return; }
+                        if (op === 'update') list[idx] = { ...list[idx], ...data };
+                        else list.splice(idx, 1);
+                    }
+                    await setDoc(profileRef(), { [section]: list, updatedAt: serverTimestamp() }, { merge: true });
+                }
+                msg.applied = true;
+                renderProfileChat();
+                renderProfile();
+                showToast('Profile 已更新');
+            } catch (e) { console.error(e); showToast('套用失敗：' + e.message, true); }
+        };
+
+        window.clearProfileChat = () => {
+            profileChatMessages = [];
+            renderProfileChat();
         };
 
         function renderAccount(user) {
