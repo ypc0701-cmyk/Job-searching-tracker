@@ -25,6 +25,45 @@ const STATE_ABBR_TO_NAME = {
 };
 const isOverloaded = (status, msg) => status === 503 || status === 429 || /high demand|overloaded/i.test(msg || "");
 
+// 跟 index.html 的 buildProfileResumeContext() 保持邏輯一致（兩份各自維護，extension
+// 沒有連到 Firestore，只能靠 content-sync.js 轉送網站 postMessage 來的 Profile 快照）。
+// 把結構化 Profile 轉成條列純文字，當作「候選人背景」餵給 Gemini。
+function buildProfileContextText(profile) {
+    if (!profile) return null;
+    const lines = [];
+    if (profile.experience?.length) {
+        lines.push('Experience:');
+        profile.experience.forEach(e => {
+            lines.push(`- ${e.title || ''}${e.company ? ` at ${e.company}` : ''}${e.type ? ` (${e.type})` : ''}, ${[e.startDate, e.endDate].filter(Boolean).join(' - ')}`);
+            if (e.description) lines.push(`  ${e.description}`);
+        });
+    }
+    if (profile.education?.length) {
+        lines.push('\nEducation:');
+        profile.education.forEach(e => {
+            lines.push(`- ${e.degree || ''}${e.school ? `, ${e.school}` : ''}${e.department ? ` (${e.department})` : ''}, ${[e.startDate, e.endDate].filter(Boolean).join(' - ')}`);
+        });
+    }
+    if (profile.languages?.length) {
+        lines.push('\nLanguages:');
+        profile.languages.forEach(l => lines.push(`- ${l.language || ''}: ${l.proficiency || ''}`));
+    }
+    if (profile.skills?.length) lines.push(`\nSkills: ${profile.skills.join(', ')}`);
+    if (profile.courses?.length) lines.push(`\nCourses: ${profile.courses.join(', ')}`);
+    if (profile.organizations?.length) {
+        lines.push('\nOrganizations:');
+        profile.organizations.forEach(o => lines.push(`- ${o.role || ''}${o.org ? ` at ${o.org}` : ''}, ${[o.startDate, o.endDate].filter(Boolean).join(' - ')}`));
+    }
+    if (profile.projects?.length) {
+        lines.push('\nProjects:');
+        profile.projects.forEach(pr => {
+            lines.push(`- ${pr.title || ''}${pr.type ? ` (${pr.type})` : ''}`);
+            if (pr.description) lines.push(`  ${pr.description}`);
+        });
+    }
+    return lines.length ? lines.join('\n') : null;
+}
+
 function notify(title, message) {
     chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title, message: message.slice(0, 300) });
 }
@@ -409,45 +448,66 @@ async function analyze({ url, tabId }, attempt = 1) {
             .map(([tag, text]) => `═══ 履歷版本「${tag}」═══\n${text.slice(0, 2600)}`)
             .join('\n\n');
 
-        const systemPrompt = `妳是 Chloe 的職業顧問，目標是判斷這份履歷投遞後，通過企業篩選（ATS 關鍵字比對 + 招募人員初步篩選）的機率有多高。請依序完成：
+        // 候選人背景：優先用 content-sync.js 從 Career Hub 網站同步過來的真實 Profile
+        // （見 buildProfileContextText()）；還沒同步過（例如剛裝好 extension、或從沒
+        // 打開過一次 Career Hub 網站）才退回這個最基本的事實當保底，並在 prompt 裡
+        // 明確告知 Gemini 背景資料不完整，Match Score 的可信度會受限。
+        const { profileSnapshot } = await chrome.storage.local.get('profileSnapshot');
+        const profileContextText = buildProfileContextText(profileSnapshot?.profile);
+        const candidateBackgroundSection = profileContextText
+            || `（Profile 尚未同步——請至少打開一次 Career Hub 網站讓 Profile 同步到這個瀏覽器。目前只知道：MSBA 學生，Boston University，2027/1 畢業。背景資料不完整，請在「分數落差說明」裡註明 Match Score 的可信度受限，並以 Resume Match Score 為主要參考。）`;
+
+        const systemPrompt = `妳是 Chloe 的職業顧問，這次要算出兩個分數：
+
+Match Score（對照 Chloe 本人真實經歷的客觀分數）：完全依據下面「候選人背景」判斷，不管任何履歷版本的文字寫法——即使某項技能只在候選人背景列出、沒寫進履歷版本，也要算有。這是「Chloe 實際上適合這份工作到什麼程度」，用來判斷值不值得投遞／做客製履歷，是存進 Career Hub 的主分數。
+
+Resume Match Score（建議履歷本身對這份工作的分數）：先選出最適合的履歷版本，只依據那份履歷版本「實際的文字內容」重新計算，不可以參考候選人背景或其他履歷版本來補。這是「這份履歷現在的文字，能不能讓 ATS／招募方看出這個 fit」，用來判斷履歷文字要不要補強。
+
+請依序完成：
 
 第一步：從 Chloe 的六份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
 
-第二步：只針對第一步選定的那份履歷，依照以下公式逐項計分，不要用整體印象打分：
+第二步：用同一套公式分別計算兩次，來源資料不同、不可互相借用：
+【Match Score 用這份來源】候選人背景整段。
+【Resume Match Score 用這份來源】第一步選定那份履歷版本的實際文字，不可以參考候選人背景或其他履歷版本來補。
 
 (A) 職責符合度，滿分 5 分：
-把 JD 的主要職責拆成條列（通常 5-10 條）。每一條依選定履歷：完全對應給 1 分、部分對應／做過類似的事給 0.5 分、完全沒對應給 0 分。
+把 JD 的主要職責拆成條列（通常 5-10 條）。每一條依該來源資料：完全對應給 1 分、部分對應／做過類似的事給 0.5 分、完全沒對應給 0 分。
 職責符合度 = (所有條目分數總和 ÷ 條目數) × 5。
 
 (B) 必填工具符合度，滿分 3 分：
 只列出 JD 明確標示為「必要／基本資格」的工具與系統（required、must have、基本條件），不要把「加分項／優先／nice to have」的工具算進來——這些另外列出，不計分，僅供參考。
-必填工具符合度 = (選定履歷能主張的必填工具數 ÷ 必填工具總數) × 3。一項工具只有在履歷明確提過才算有；JD 說「或同類工具」才能算近似工具相符，否則不算。
+必填工具符合度 = (該來源資料能主張的必填工具數 ÷ 必填工具總數) × 3。一項工具只有在該來源資料明確提過才算有；JD 說「或同類工具」才能算近似工具相符，否則不算——籠統的上位詞不算明確提過（例如寫「Microsoft Office」不能當作寫了「Excel」，寫「Google Workspace」不能當作寫了「Google Sheets」）。
 若 JD 完全沒有列出任何必填工具，直接給 1.5 分。
 
-(C) 方向契合度，滿分 2 分（固定值，不按比例計算）：
+(C) 方向契合度，滿分 2 分（固定值，不按比例計算，兩次計算通常得出一樣的類別）：
 - Product Management / Product Analyst 類職缺：2 分
 - Business Intelligence / Data Analytics 類職缺：1.5 分
 - Marketing Analytics / Growth Analytics 類職缺：1 分
 - 其他分析類或營運類職缺：0.5 分
 - 完全不相關（例如現場製作、客服、純銷售）：0 分
 
-第三步：總分 = 職責符合度 + 必填工具符合度 + 方向契合度，四捨五入到小數一位（0 到 10 分）。
+第三步：
+Match Score = 候選人背景算出的（職責符合度＋必填工具符合度＋方向契合度），四捨五入到小數一位（0 到 10 分）。
+Resume Match Score = 選定履歷版本文字算出的（職責符合度＋必填工具符合度＋方向契合度），四捨五入到小數一位（0 到 10 分）。
+如果兩個分數有落差，簡短說明是哪裡造成的（通常是履歷版本文字沒有明確寫出候選人背景裡其實有的技能或經歷）。
 
 評分時務必遵守：
 - 忽略 JD 要求的「年資」，新鮮人／實習職缺的年資要求通常只是參考門檻，不要因為年資不符扣分。
 - JD 提到的美國地點、是否需要簽證贊助（sponsorship），都不算扣分項目——候選人持 OPT 身份可合法在美工作，不需要雇主辦理簽證贊助。
-- 只能引用選定履歷裡明確出現的事實，不可編造、不可誇大。以下說法絕對不能出現：具體的業績配額百分比數字、ROAS 相關 dashboard、具體營收佔比數字、定價 A/B 測試、包裝策略建議、把任何探索性／實驗性模型描述成「成功預測」。
+- 只能引用該次計算來源資料裡明確出現的事實，不可編造、不可誇大。以下說法絕對不能出現：具體的業績配額百分比數字、ROAS 相關 dashboard、具體營收佔比數字、定價 A/B 測試、包裝策略建議、把任何探索性／實驗性模型描述成「成功預測」。
 
-第四步：列出風險旗標（不影響分數，沒有就寫「無風險」）：
+第四步：列出風險旗標（以候選人背景為準，不影響分數，沒有就寫「無風險」）：
 - JD 要求「在校大學生」或「僅限大學部」
 - JD 要求工程相關學位
 - JD 要求安全許可
 - 到職日期風險
 - JD 明確寫不提供現在或未來的簽證贊助
 - 需要常駐現場或頻繁出差
-- JD 把選定履歷完全沒有的經驗當作核心必要條件
+- JD 把候選人背景或所有履歷版本都沒有的經驗當作核心必要條件
 
-候選人背景：MSBA 學生（Boston University，2027/1 畢業）。
+候選人背景（只能引用以下事實，不可編造）：
+${candidateBackgroundSection}
 
 以下是 Chloe 六份履歷版本的完整內容：
 
@@ -463,18 +523,22 @@ ${resumeSection}
 薪資: [範圍，未提供則寫 未提供]
 建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
 履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
-職責符合度明細: [逐項列出 JD 職責與對應分數 1/0.5/0，用頓號分隔]
-職責符合度分數: [0-5，一位小數]
-必填工具明細: [逐項列出 JD 必要工具與是否命中，用頓號分隔；JD 沒列必填工具就寫 JD未列出必填工具]
-必填工具分數: [0-3，一位小數；JD 沒列必填工具固定給 1.5]
+背景職責符合度明細: [逐項列出 JD 職責與對應分數 1/0.5/0，依候選人背景評分，頓號分隔]
+背景職責符合度分數: [0-5，一位小數，依候選人背景計算]
+背景必填工具明細: [逐項列出 JD 必要工具與是否命中，依候選人背景判斷，頓號分隔；JD 沒列必填工具就寫 JD未列出必填工具]
+背景必填工具分數: [0-3，一位小數，依候選人背景計算；JD 沒列必填工具固定給 1.5]
 加分工具參考: [JD 列出的優先／加分工具，不計分，無則寫 無]
 方向類別: [Product Management/Business Intelligence/Marketing Analytics/Other Analytical or Operations/Unrelated 其中之一]
 方向分數: [0/0.5/1/1.5/2 其中之一，對應方向類別]
-分數: [0到10，=職責符合度分數+必填工具分數+方向分數，四捨五入一位小數]
+對照背景分數: [0到10，=背景職責符合度分數+背景必填工具分數+方向分數，四捨五入一位小數]
+履歷職責符合度分數: [0-5，一位小數，只依建議履歷選定版本的實際文字計算，不可參考候選人背景]
+履歷必填工具分數: [0-3，一位小數，只依建議履歷選定版本的實際文字計算，不可參考候選人背景；JD 沒列必填工具固定給 1.5]
+對照履歷分數: [0到10，=履歷職責符合度分數+履歷必填工具分數+方向分數，四捨五入一位小數]
+分數落差說明: [如果對照背景分數跟對照履歷分數不同，一句話說明是履歷版本文字沒有明確寫出候選人背景裡的哪些技能或經歷造成的；沒有落差就寫 履歷文字與候選人背景一致，無落差]
 風險旗標: [逐項列出風險，用頓號分隔；沒有風險就寫 無風險]
-理由: [兩句話總結，需緊扣上面的職責符合度與必填工具明細]
+分析理由: [兩句話總結，需緊扣上面的背景職責符合度與背景必填工具明細]
 建議: [針對缺漏的必填工具與未覆蓋的職責，具體建議如何調整履歷內容以提高通過篩選的機率]
-建議優先度: [分數大於等於6寫 分數達標建議製作客製化履歷；小於6寫 分數偏低暫不建議製作客製化履歷]`;
+建議優先度: [對照背景分數大於等於6寫 分數達標建議製作客製化履歷；小於6寫 分數偏低暫不建議製作客製化履歷]`;
 
         const aiText = await callGemini(geminiKey, {
             contents: [{ parts: [{ text: `JD內容:\n${job.jd.slice(0, 12000)}` }] }],
@@ -488,14 +552,14 @@ ${resumeSection}
         };
         const resumeTagRaw = grab('建議履歷');
         const resumeTag = RESUME_TAGS.find(t => resumeTagRaw.includes(t)) || "";
-        const scoreRaw = grab('分數');
+        const matchScoreRaw = grab('對照背景分數');
 
         // Gemini 偶爾不會照要求的格式輸出（尤其 JD 內容異常時），這種情況下
         // grab() 全部抓空、分數預設變 0，過去會被當成「成功」默默存進資料庫，
         // 使用者只看到「分數 0、建議履歷未指定」卻不知道哪裡出錯。現在直接
         // 視為失敗並附上 Gemini 原始回覆的開頭，方便判斷是不是內容本身有問題。
-        if (!resumeTagRaw || !scoreRaw) {
-            throw new Error(`Gemini 回覆格式不符預期，未包含「建議履歷」或「分數」欄位。原始回覆開頭：${aiText.slice(0, 200)}`);
+        if (!resumeTagRaw || !matchScoreRaw) {
+            throw new Error(`Gemini 回覆格式不符預期，未包含「建議履歷」或「對照背景分數」欄位。原始回覆開頭：${aiText.slice(0, 200)}`);
         }
 
         // Handshake 的「At a glance」是網站自己結構化標出來的資料（見 extractJobInfo），
@@ -521,13 +585,13 @@ ${resumeSection}
             city: domCity || grab('城市'),
             category: domCategory || grab('類別'),
             type: domType || grab('工作型態'),
-            score: parseFloat((scoreRaw.match(/[\d.]+/) || [0])[0]) || 0,
+            score: parseFloat((matchScoreRaw.match(/[\d.]+/) || [0])[0]) || 0,
             salary: job.salary || grab('薪資'),
             jobUrl: job.url,
             jobDescription: job.jd,
             resumeTag,
             easyApply: job.easyApply,
-            notes: `${job.closed ? '⚠️【注意】此職缺已停止收件（No longer accepting applications）\n\n' : ''}${job.workAuth ? `🛂【地點要求】${job.workAuth}\n\n` : ''}【建議履歷】${resumeTag || resumeTagRaw}\n${grab('履歷理由')}\n\n【評分明細】\n職責符合度：${grab('職責符合度分數') || '未評估'}/5（${grab('職責符合度明細') || '無資料'}）\n必填工具符合度：${grab('必填工具分數') || '未評估'}/3（${grab('必填工具明細') || '無資料'}）\n加分工具參考：${grab('加分工具參考') || '無'}\n方向契合度：${grab('方向類別') || '未評估'}（${grab('方向分數') || '未評估'}/2）\n\n【風險旗標】\n${grab('風險旗標') || '無風險'}\n\n【分析理由】\n${grab('理由')}\n\n【對策建議】\n${grab('建議')}\n\n【優先度】\n${grab('建議優先度') || '未評估'}`
+            notes: `${job.closed ? '⚠️【注意】此職缺已停止收件（No longer accepting applications）\n\n' : ''}${job.workAuth ? `🛂【地點要求】${job.workAuth}\n\n` : ''}${!profileContextText ? '⚠️【Profile 未同步】目前用最基本的背景資訊估算，建議打開一次 Career Hub 網站同步 Profile 後重新分析\n\n' : ''}【建議履歷】${resumeTag || resumeTagRaw}\n${grab('履歷理由')}\n\n【評分明細 — 對照 Profile】\n職責符合度：${grab('背景職責符合度分數') || '未評估'}/5（${grab('背景職責符合度明細') || '無資料'}）\n必填工具符合度：${grab('背景必填工具分數') || '未評估'}/3（${grab('背景必填工具明細') || '無資料'}）\n加分工具參考：${grab('加分工具參考') || '無'}\n方向契合度：${grab('方向類別') || '未評估'}（${grab('方向分數') || '未評估'}/2）\n對照背景分數：${matchScoreRaw || '未評估'}/10\n\n【對照履歷版本「${resumeTag || resumeTagRaw}」實際文字】\n對照履歷分數：${grab('對照履歷分數') || '未評估'}/10\n${grab('分數落差說明') || ''}\n\n【風險旗標】\n${grab('風險旗標') || '無風險'}\n\n【分析理由】\n${grab('分析理由')}\n\n【對策建議】\n${grab('建議')}\n\n【優先度】\n${grab('建議優先度') || '未評估'}`
         };
 
         if (createdTabId) { await chrome.tabs.remove(createdTabId).catch(() => {}); createdTabId = null; }
@@ -539,7 +603,7 @@ ${resumeSection}
         bytes.forEach(b => bin += String.fromCharCode(b));
         const encoded = btoa(bin);
         await sendToTracker(payload, encoded);
-        const doneMsg = `${payload.title}｜分數 ${payload.score}｜建議履歷：${resumeTag || '未指定'}`;
+        const doneMsg = `${payload.title}｜Match Score ${payload.score}｜建議履歷：${resumeTag || '未指定'}`;
         await setRun('✓ 完成', { ok: true, message: doneMsg });
         notify('✓ 已匯入 Career Hub', doneMsg);
         await cleanupRun(runId);
@@ -552,4 +616,10 @@ ${resumeSection}
 
 chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === 'analyze') analyze(msg);
+    if (msg?.type === 'profileSync') {
+        // content-sync.js 轉送來的 Profile 快照：存起來，下次 analyze() 分析時當候選人背景用。
+        // 每次打開 Career Hub 網站、Profile 有變動時都會重新推送一次，所以這份快取只會跟
+        // 「上次打開 Career Hub 網站」一樣新，不是即時同步。
+        chrome.storage.local.set({ profileSnapshot: { profile: msg.profile, syncedAt: Date.now() } });
+    }
 });

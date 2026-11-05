@@ -15,6 +15,13 @@
     "https://*.indeed.com/*",
     "https://ypc0701-cmyk.github.io/*"
   ],
+  "content_scripts": [
+    {
+      "matches": ["https://ypc0701-cmyk.github.io/Job-searching-tracker/*"],
+      "js": ["content-sync.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "icons": {
     "16": "icon.png",
     "48": "icon.png",

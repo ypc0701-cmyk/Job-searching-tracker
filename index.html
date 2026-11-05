@@ -435,6 +435,14 @@
                     <div id="profile-languages-list" class="flex flex-col gap-2"></div>
                 </div>
                 <div>
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">Skills</h3>
+                    <div class="flex gap-2">
+                        <input id="skills-input" class="input-field text-xs" placeholder="Separate with commas, e.g. Excel, Google Sheets, SQL, Python, Tableau">
+                        <button onclick="saveSkills()" class="px-4 text-xs font-bold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">Save</button>
+                    </div>
+                    <div id="skills-chips" class="flex flex-wrap gap-2 mt-2"></div>
+                </div>
+                <div>
                     <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">Courses</h3>
                     <div class="flex gap-2">
                         <input id="courses-input" class="input-field text-xs" placeholder="Separate with commas, e.g. Machine Learning, Python Programming">
@@ -819,6 +827,7 @@
                         unsubProfile = onSnapshot(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'profile', 'main'), (snap) => {
                             userProfile = snap.exists() ? snap.data() : {};
                             if (profileModalOpen) renderProfile();
+                            syncProfileToExtension();
                         }, (err) => console.error(err));
 
                         const contactsCol = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'contacts');
@@ -836,37 +845,56 @@
         }
 
         // 評分標準文字：Job AI Analysis 跟全站 AI 助理（回答「怎麼打分數」）共用同一份，避免兩邊各寫一次、以後改到不同步
+        //
+        // 這份規則會算出兩個分數，來源資料不同、意義不同：
+        //   Match Score（主分數，存進職缺的 score 欄位）：只依據候選人背景（Profile：Experience／
+        //     Education／Skills／Languages／Organizations／Projects）判斷，完全不管任何一份履歷版本
+        //     的文字寫法——即使某項技能只出現在 Profile、沒寫進任何履歷版本，也要算有。這是「Chloe 本人
+        //     實際上適合這份工作到什麼程度」，用來判斷值不值得投遞／做客製履歷。
+        //   Resume Match Score（次要分數，只在 AI 分析結果裡提及，不存成職缺欄位）：先選出最適合的履歷
+        //     版本（suggestedResume），只依據那份履歷版本「實際的文字內容」重新套用同一套公式，不能借用
+        //     Profile 或其他履歷版本的內容去補。這是「這份履歷現在的文字，能不能讓 ATS／招募方看出這個
+        //     fit」，用來判斷履歷文字要不要補強（例如 Profile 寫了 Excel，但選中履歷版本的 Skills 只寫
+        //     Microsoft Office、沒有明確出現「Excel」字樣，這項工具 Match Score 算有、Resume Match
+        //     Score 不算）。
         function buildScoringRubricText() {
-            return `妳是 Chloe 的職業顧問，目標是判斷這份履歷投遞後，通過企業篩選（ATS 關鍵字比對 + 招募人員初步篩選）的機率有多高。請依序完成：
+            return `妳是 Chloe 的職業顧問，目標是判斷這份 JD 跟 Chloe 的真實契合度，以及她目前的履歷版本能不能把這個契合度表現出來。請依序完成：
 
-            第一步：從 Chloe 的每一份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
+            第一步：從 Chloe 的每一份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（suggestedResume，不要只看版本名稱）。
 
-            第二步：只針對第一步選定的那份履歷（必要時可參考候選人背景補充細節，但履歷本身優先），依照以下公式逐項計分，不要用整體印象打分：
+            第二步：用同一套公式分別計算兩次，來源資料不同，不可以互相借用：
+
+            【Match Score 用這份來源】候選人背景（Profile 的 Experience／Education／Skills／Languages／Organizations／Projects，即下方「候選人背景」整段）。
+            【Resume Match Score 用這份來源】第一步選定的那份履歷版本的實際文字（即下方該履歷版本的內容），不可以參考候選人背景或其他履歷版本來補。
+
+            公式（兩次計算都套用同一套，只是換來源資料）：
 
             (A) 職責符合度，滿分 5 分：
-            把 JD 的主要職責拆成條列（通常 5-10 條）。每一條依選定履歷：完全對應給 1 分、部分對應／做過類似的事給 0.5 分、完全沒對應給 0 分。
+            把 JD 的主要職責拆成條列（通常 5-10 條）。每一條依該來源資料：完全對應給 1 分、部分對應／做過類似的事給 0.5 分、完全沒對應給 0 分。
             職責符合度 = (所有條目分數總和 ÷ 條目數) × 5。
 
             (B) 必填工具符合度，滿分 3 分：
             只列出 JD 明確標示為「必要／基本資格」的工具與系統（required、must have、基本條件），不要把「加分項／優先／nice to have」的工具算進來——這些另外列出，不計分，僅供參考。
-            必填工具符合度 = (選定履歷能主張的必填工具數 ÷ 必填工具總數) × 3。一項工具只有在履歷或候選人背景明確提過才算有；JD 說「或同類工具」才能算近似工具相符（例如 JD 要「雲端資料倉儲或同類系統」，BigQuery 可以算），否則不算。
+            必填工具符合度 = (該來源資料能主張的必填工具數 ÷ 必填工具總數) × 3。一項工具只有在該來源資料明確提過才算有；JD 說「或同類工具」才能算近似工具相符（例如 JD 要「雲端資料倉儲或同類系統」，BigQuery 可以算），否則不算——籠統的上位詞不算明確提過（例如履歷寫「Microsoft Office」不能當作寫了「Excel」，寫「Google Workspace」不能當作寫了「Google Sheets」，除非 JD 本身就只是寫「Office 應用程式」這種籠統說法）。
             若 JD 完全沒有列出任何必填工具，直接給 1.5 分，並在明細裡說明「JD 未列出必填工具」。
 
-            (C) 方向契合度，滿分 2 分（固定值，不按比例計算）：
+            (C) 方向契合度，滿分 2 分（固定值，不按比例計算，兩次計算的來源資料通常會得出一樣的類別，除非履歷版本本身方向明顯偏掉）：
             - Product Management / Product Analyst 類職缺：2 分
             - Business Intelligence / Data Analytics 類職缺：1.5 分
             - Marketing Analytics / Growth Analytics 類職缺：1 分
             - 其他分析類或營運類職缺：0.5 分
             - 完全不相關（例如現場製作、客服、純銷售）：0 分
 
-            第三步：總分 = 職責符合度 + 必填工具符合度 + 方向契合度，四捨五入到小數一位（0 到 10 分）。
+            第三步：Match Score = 用候選人背景算出的（職責符合度＋必填工具符合度＋方向契合度），四捨五入到小數一位（0 到 10 分）。
+            Resume Match Score = 用選定履歷版本文字算出的（職責符合度＋必填工具符合度＋方向契合度），四捨五入到小數一位（0 到 10 分）。
+            如果兩個分數有落差，簡短說明是哪裡造成的（通常是履歷版本的文字沒有明確寫出某個候選人背景裡其實有的技能或經歷）。
 
             評分時務必遵守：
             - 忽略 JD 要求的「年資」（例如要求 3-5 年經驗），新鮮人／實習職缺的年資要求通常只是參考門檻，不是硬性必要條件，不要因為年資不符扣分。
             - JD 提到的美國地點、是否需要簽證贊助（sponsorship），都不算扣分項目——候選人持 OPT 身份可合法在美工作，不需要雇主辦理簽證贊助。
-            - 只能引用候選人背景與履歷裡明確出現的事實，不可編造、不可誇大、不可把「做過類似的事」寫成「做過完全一樣的事」。以下說法絕對不能出現，即使聽起來合理：具體的業績配額百分比數字、ROAS 相關 dashboard、具體營收佔比數字（例如「幾個產品佔營收的幾成」）、定價 A/B 測試、包裝策略建議、把任何探索性／實驗性模型描述成「成功預測」或「準確」。
+            - 只能引用該次計算來源資料裡明確出現的事實，不可編造、不可誇大、不可把「做過類似的事」寫成「做過完全一樣的事」。以下說法絕對不能出現，即使聽起來合理：具體的業績配額百分比數字、ROAS 相關 dashboard、具體營收佔比數字（例如「幾個產品佔營收的幾成」）、定價 A/B 測試、包裝策略建議、把任何探索性／實驗性模型描述成「成功預測」或「準確」。
 
-            第四步：列出風險旗標（不影響分數，但必須全部列出，沒有就回傳空陣列）：
+            第四步：列出風險旗標（以 Match Score 的來源資料為準，不影響分數，但必須全部列出，沒有就回傳空陣列）：
             - JD 要求「在校大學生」或「僅限大學部」（但候選人背景顯示已有學士學位且在讀碩士時才適用）
             - JD 要求工程相關學位
             - JD 要求安全許可（security clearance）
@@ -923,18 +951,20 @@
               "jobUrl": "JD 裡提到的職缺網址，沒有就填空字串",
               "suggestedResume": "從以下履歷版本的名稱中選一個最貼合的：${userResumes.map(r => r.tag).join('、')}",
               "resumeReason": "一句話說明為何這份履歷的哪些具體經歷最貼合 JD",
-              "dutyBreakdown": "逐項列出 JD 職責與對應分數（1/0.5/0），每項一行",
-              "dutyScore": 0 到 5 之間的數字，最多一位小數，嚴格依照職責符合度公式計算,
-              "requiredToolsBreakdown": "逐項列出 JD 標示為必要／基本資格的工具與是否命中；JD 完全沒列必填工具就填「JD 未列出必填工具」",
+              "dutyBreakdown": "用候選人背景逐項列出 JD 職責與對應分數（1/0.5/0），每項一行",
+              "dutyScore": 0 到 5 之間的數字，最多一位小數，依照職責符合度公式、用候選人背景計算（Match Score 的分量）,
+              "requiredToolsBreakdown": "用候選人背景逐項列出 JD 標示為必要／基本資格的工具與是否命中；JD 完全沒列必填工具就填「JD 未列出必填工具」",
               "preferredToolsNote": "JD 列出的加分／優先工具，不計分，僅供參考，無則填「無」",
-              "toolScore": 0 到 3 之間的數字，最多一位小數，嚴格依照必填工具符合度公式計算（JD 沒列必填工具時固定填 1.5）,
+              "toolScore": 0 到 3 之間的數字，最多一位小數，依照必填工具符合度公式、用候選人背景計算（JD 沒列必填工具時固定填 1.5，Match Score 的分量）,
               "directionCategory": "Product Management、Business Intelligence、Marketing Analytics、Other Analytical or Operations、Unrelated 其中之一",
               "directionScore": 0、0.5、1、1.5 或 2 其中之一的數字，必須對應 directionCategory 的固定分數,
-              "score": dutyScore + toolScore + directionScore 的總和，四捨五入到小數一位的數字（0 到 10 之間）,
+              "matchScore": dutyScore + toolScore + directionScore 的總和，四捨五入到小數一位的數字（0 到 10 之間）——這是對照候選人背景（Profile）算出來的真實契合度,
+              "resumeMatchScore": 0 到 10 之間的數字，最多一位小數——只用 suggestedResume 選定的那份履歷版本「實際文字」重新套用同一套公式算出來的總分，不可參考候選人背景或其他履歷版本,
+              "resumeMatchNote": "如果 matchScore 跟 resumeMatchScore 有落差，一句話說明是履歷版本文字裡沒有明確寫出候選人背景裡的哪些技能或經歷造成的；沒有落差就填「履歷文字與候選人背景一致，無落差」",
               "riskFlags": ["逐項列出風險旗標，每項一句話；完全沒有風險就回傳空陣列 []"],
               "reasoning": "兩句話總結，需緊扣上面的職責符合度與必填工具明細",
               "suggestions": "針對缺漏的必填工具與未覆蓋的職責，具體建議如何調整履歷內容以提高通過篩選的機率",
-              "recommendation": "score 大於等於 6 時填「分數達標，建議製作客製化履歷」；score 小於 6 時填「分數偏低，暫不建議投入客製化履歷製作，除非使用者主動要求」"
+              "recommendation": "matchScore 大於等於 6 時填「分數達標，建議製作客製化履歷」；matchScore 小於 6 時填「分數偏低，暫不建議投入客製化履歷製作，除非使用者主動要求」"
             }`;
 
             try {
@@ -1089,7 +1119,9 @@ ${buildProfileResumeContext(userProfile)}${buildResumeTemplateContext()}`;
                 `  ${r.requiredToolsBreakdown || ''}`,
                 `Preferred Tools (not scored): ${r.preferredToolsNote || ''}`,
                 `Direction Fit: ${r.directionCategory || ''} (${r.directionScore ?? ''}/2)`,
-                `Score: ${r.score ?? ''}/10`,
+                `Match Score (vs. your Profile): ${r.matchScore ?? ''}/10`,
+                `Resume Match Score (vs. suggested resume's actual text): ${r.resumeMatchScore ?? ''}/10`,
+                `  ${r.resumeMatchNote || ''}`,
                 `Risk Flags:`,
                 flags,
                 `Reasoning: ${r.reasoning || ''}`,
@@ -1112,14 +1144,15 @@ ${buildProfileResumeContext(userProfile)}${buildResumeTemplateContext()}`;
             if (r.city) document.getElementById('in-city').value = r.city;
             if (r.salary) document.getElementById('in-salary').value = r.salary;
             if (r.jobUrl) document.getElementById('in-job-url').value = r.jobUrl;
-            if (typeof r.score === 'number') document.getElementById('in-score').value = r.score;
+            if (typeof r.matchScore === 'number') document.getElementById('in-score').value = r.matchScore;
 
             const matchedTag = userResumes.map(x => x.tag).find(t => (r.suggestedResume || '').includes(t));
             if (matchedTag) document.getElementById('in-resume-tag').value = matchedTag;
 
             let notes = "";
             if (matchedTag) notes += `[Suggested Resume] ${matchedTag}\n${r.resumeReason || ''}\n\n`;
-            notes += `[Score Breakdown]\nDuty match: ${r.dutyScore ?? 'n/a'}/5 - ${r.dutyBreakdown || ''}\nRequired tools: ${r.toolScore ?? 'n/a'}/3 - ${r.requiredToolsBreakdown || ''}\nPreferred tools (not scored): ${r.preferredToolsNote || 'None'}\nDirection fit: ${r.directionCategory || 'n/a'} (${r.directionScore ?? 'n/a'}/2)\n\n`;
+            notes += `[Score Breakdown — vs. your Profile]\nDuty match: ${r.dutyScore ?? 'n/a'}/5 - ${r.dutyBreakdown || ''}\nRequired tools: ${r.toolScore ?? 'n/a'}/3 - ${r.requiredToolsBreakdown || ''}\nPreferred tools (not scored): ${r.preferredToolsNote || 'None'}\nDirection fit: ${r.directionCategory || 'n/a'} (${r.directionScore ?? 'n/a'}/2)\nMatch Score: ${r.matchScore ?? 'n/a'}/10\n\n`;
+            notes += `[Resume Match Score — vs. "${matchedTag || r.suggestedResume || 'suggested resume'}"'s actual text]\n${r.resumeMatchScore ?? 'n/a'}/10. ${r.resumeMatchNote || ''}\n\n`;
             if (r.riskFlags && r.riskFlags.length) notes += `[Risk Flags]\n${r.riskFlags.map(f => `- ${f}`).join('\n')}\n\n`;
             if (r.reasoning) notes += `[Reasoning]\n${r.reasoning}\n\n`;
             if (r.suggestions) notes += `[Suggestions]\n${r.suggestions}\n\n`;
@@ -2328,11 +2361,21 @@ ${buildProfileResumeContext(userProfile)}${buildResumeTemplateContext()}`;
             return doc(db, 'artifacts', APP_ID, 'users', currentUser.uid, 'profile', 'main');
         }
 
+        // 把目前的 Profile 推送給 Chrome Extension（如果有裝的話），讓 Extension 分析
+        // 職缺時也能用上真實的 Profile 資料，不用再靠寫死的候選人背景。Extension 的
+        // content-sync.js 會接住這個 postMessage；沒裝 extension 時這個訊息沒人聽，
+        // 不影響網站本身運作。
+        function syncProfileToExtension() {
+            try {
+                window.postMessage({ type: 'CAREER_HUB_PROFILE_SYNC', profile: userProfile }, window.location.origin);
+            } catch (e) { /* 忽略——同步失敗不影響網站功能 */ }
+        }
+
         function profileHasAnyData(p) {
             if (!p) return false;
             return !!(p.fullName || p.email || p.phone ||
                 p.experience?.length || p.education?.length || p.languages?.length || p.courses?.length ||
-                p.organizations?.length || p.projects?.length);
+                p.skills?.length || p.organizations?.length || p.projects?.length);
         }
 
         function isProfileComplete(p) {
@@ -2393,6 +2436,7 @@ AI Tools: [Tool], [Tool]`;
                 lines.push('\nLanguages:');
                 p.languages.forEach(l => lines.push(`- ${l.language || ''}: ${l.proficiency || ''}`));
             }
+            if (p.skills?.length) lines.push(`\nSkills: ${p.skills.join(', ')}`);
             if (p.courses?.length) lines.push(`\nCourses: ${p.courses.join(', ')}`);
             if (p.organizations?.length) {
                 lines.push('\nOrganizations:');
@@ -2451,6 +2495,10 @@ AI Tools: [Tool], [Tool]`;
             document.getElementById('in-profile-name').value = userProfile.fullName || '';
             document.getElementById('in-profile-email').value = userProfile.email || '';
             document.getElementById('in-profile-phone').value = userProfile.phone || '';
+            document.getElementById('skills-input').value = (userProfile.skills || []).join(', ');
+            document.getElementById('skills-chips').innerHTML = (userProfile.skills || [])
+                .map(c => `<span class="text-[10px] font-bold px-3 py-1 bg-slate-100 text-slate-500 rounded-full">${escapeHtml(c)}</span>`).join('');
+
             document.getElementById('courses-input').value = (userProfile.courses || []).join(', ');
             document.getElementById('courses-chips').innerHTML = (userProfile.courses || [])
                 .map(c => `<span class="text-[10px] font-bold px-3 py-1 bg-slate-100 text-slate-500 rounded-full">${escapeHtml(c)}</span>`).join('');
@@ -2498,6 +2546,15 @@ AI Tools: [Tool], [Tool]`;
             const courses = document.getElementById('courses-input').value.split(/[、,]/).map(s => s.trim()).filter(Boolean);
             try {
                 await setDoc(profileRef(), { courses, updatedAt: serverTimestamp() }, { merge: true });
+                showToast('Saved');
+            } catch (e) { console.error(e); showToast('Save failed: ' + e.message, true); }
+        };
+
+        window.saveSkills = async () => {
+            if (!currentUser) return;
+            const skills = document.getElementById('skills-input').value.split(/[、,]/).map(s => s.trim()).filter(Boolean);
+            try {
+                await setDoc(profileRef(), { skills, updatedAt: serverTimestamp() }, { merge: true });
                 showToast('Saved');
             } catch (e) { console.error(e); showToast('Save failed: ' + e.message, true); }
         };
