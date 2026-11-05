@@ -34,15 +34,108 @@ function setRun(stage, extra = {}) {
     return chrome.storage.local.set({ lastRun: { time: Date.now(), stage, ...extra } });
 }
 
+// ── 背景穩定性機制：keepalive + 卡住自我偵測 + 失敗自動重試 ──────────────
+//
+// MV3 的 background service worker 閒置一段時間、或執行太久，會被 Chrome
+// 直接砍掉，這不是 JS 例外，try/catch/finally 都救不回來。用 chrome.alarms
+// 做兩件事：
+//   1) keepalive：執行期間每 30 秒觸發一次 alarm，喚醒/維持 service worker
+//      不被判定為閒置，降低中途被砍的機率（降低機率，無法完全避免——
+//      Chrome 仍可能強制回收，所以下面第 2 點的偵測還是必要的）。
+//   2) 卡住自我偵測：另外排一個「這次執行理論上最晚該有結果」的一次性
+//      alarm。即使原本執行的 service worker 真的被砍了，alarm 觸發時
+//      Chrome 會喚醒一個新的 service worker 執行這段程式碼，檢查上次
+//      狀態是否還卡在「進行中」，是的話視為失敗並交給重試機制——
+//      不需要使用者手動發現、也不需要原本的執行續存活。
+//
+// STALE_AFTER_SEC 要蓋過「最糟但正常」的單次執行耗時：抓取最多 8 次
+// retry（約 16 秒）+ 開分頁等待（最多 20 秒）+ Gemini 最多 2 模型 x 2
+// 次重試 x 45 秒逾時（最多約 190 秒），抓寬一點用 240 秒。
+const STALE_AFTER_SEC = 240;
+const KEEPALIVE_ALARM = 'career-hub-keepalive';
+const STALE_CHECK_ALARM_PREFIX = 'career-hub-stale-check-';
+const MAX_ATTEMPTS = 3;
+
+function startKeepalive() {
+    // periodInMinutes 的最小值是 0.5（30 秒），同名 alarm 會直接覆蓋，重複呼叫安全
+    chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+}
+function stopKeepalive() {
+    chrome.alarms.clear(KEEPALIVE_ALARM);
+}
+
+async function cleanupRun(runId) {
+    stopKeepalive();
+    if (runId) chrome.alarms.clear(`${STALE_CHECK_ALARM_PREFIX}${runId}`);
+    await chrome.storage.local.remove('pendingAnalyze');
+}
+
+// 失敗（含偵測到卡住）統一入口：還有重試次數就自動重跑，否則才是最終失敗
+async function handleAnalyzeFailure(pending, err) {
+    const { url, tabId, runId, attempt } = pending;
+    console.error('analyze failed:', err);
+    if (attempt < MAX_ATTEMPTS) {
+        chrome.alarms.clear(`${STALE_CHECK_ALARM_PREFIX}${runId}`);
+        await setRun(`第 ${attempt}/${MAX_ATTEMPTS} 次嘗試失敗（${err.message}），3 秒後自動重試...`);
+        await new Promise(r => setTimeout(r, 3000));
+        analyze({ url, tabId }, attempt + 1);
+    } else {
+        await cleanupRun(runId);
+        const msg = `已自動重試 ${MAX_ATTEMPTS} 次仍失敗：${err.message}`;
+        await setRun('失敗', { ok: false, message: msg });
+        notify('匯入失敗', msg);
+    }
+}
+
+// alarm 觸發時（可能是全新喚醒的 service worker），檢查這個 runId 是否還卡在進行中
+async function checkStaleRun(runId) {
+    const { lastRun, pendingAnalyze } = await chrome.storage.local.get(['lastRun', 'pendingAnalyze']);
+    // 不是同一筆執行、或已經有成功/失敗結果了，代表正常結束或已被新的一次分析取代，不處理
+    if (!pendingAnalyze || pendingAnalyze.runId !== runId || lastRun?.ok !== undefined) return;
+    await handleAnalyzeFailure(pendingAnalyze, new Error(`執行超過 ${STALE_AFTER_SEC} 秒沒有回應（背景執行可能已被中斷）`));
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === KEEPALIVE_ALARM) return; // 只是喚醒/維持 service worker，不用做事
+    if (alarm.name.startsWith(STALE_CHECK_ALARM_PREFIX)) {
+        checkStaleRun(alarm.name.slice(STALE_CHECK_ALARM_PREFIX.length));
+    }
+});
+
+const GEMINI_TIMEOUT_MS = 45000;
+
+// fetch 沒有內建逾時，呼叫卡住時 await 會無限等待，連 analyze() 的
+// try/catch 都救不回來（因為根本沒有拋出錯誤）。用 AbortController 強制
+// 在時間到時中止，讓卡住的呼叫也能變成一個可以被 catch 到的錯誤。
+async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function callGemini(apiKey, body) {
     let lastErr = null;
     for (const model of GEMINI_MODELS) {
         for (let attempt = 1; attempt <= 2; attempt++) {
-            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            let resp;
+            try {
+                resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }, GEMINI_TIMEOUT_MS);
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    lastErr = new Error(`呼叫 ${model} 逾時（${GEMINI_TIMEOUT_MS / 1000} 秒無回應）`);
+                    await new Promise(r => setTimeout(r, 2000));
+                    continue;
+                }
+                throw e;
+            }
             const result = await resp.json();
             if (resp.ok) return result.candidates?.[0]?.content?.parts?.[0]?.text || "";
             const msg = result?.error?.message || `HTTP ${resp.status}`;
@@ -277,13 +370,21 @@ async function sendToTracker(payload, encoded) {
     return 'new-tab';
 }
 
-async function analyze({ url, tabId }) {
+async function analyze({ url, tabId }, attempt = 1) {
     const { geminiKey } = await chrome.storage.local.get('geminiKey');
     if (!geminiKey) {
         await setRun('失敗', { ok: false, message: '請先在擴充功能視窗儲存 Gemini API Key' });
         notify('Career Hub', '請先在擴充功能視窗儲存 Gemini API Key');
         return;
     }
+
+    // 第一次嘗試才產生新的 runId；重試（attempt > 1）沿用同一筆 pendingAnalyze 的 runId，
+    // 這樣卡住偵測 alarm 才能正確比對「是不是同一次執行」
+    const existing = (await chrome.storage.local.get('pendingAnalyze')).pendingAnalyze;
+    const runId = attempt === 1 || !existing ? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : existing.runId;
+    await chrome.storage.local.set({ pendingAnalyze: { url, tabId, runId, attempt } });
+    startKeepalive();
+    chrome.alarms.create(`${STALE_CHECK_ALARM_PREFIX}${runId}`, { delayInMinutes: STALE_AFTER_SEC / 60 });
 
     let createdTabId = null;
     try {
@@ -441,10 +542,9 @@ ${resumeSection}
         const doneMsg = `${payload.title}｜分數 ${payload.score}｜建議履歷：${resumeTag || '未指定'}`;
         await setRun('✓ 完成', { ok: true, message: doneMsg });
         notify('✓ 已匯入 Career Hub', doneMsg);
+        await cleanupRun(runId);
     } catch (e) {
-        console.error('analyze failed:', e);
-        await setRun('失敗', { ok: false, message: e.message });
-        notify('匯入失敗', e.message);
+        await handleAnalyzeFailure({ url, tabId, runId, attempt }, e);
     } finally {
         if (createdTabId) chrome.tabs.remove(createdTabId).catch(() => {});
     }
