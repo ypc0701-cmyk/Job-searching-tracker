@@ -61,6 +61,10 @@ function buildProfileContextText(profile) {
             if (pr.description) lines.push(`  ${pr.description}`);
         });
     }
+    if (profile.certifications?.length) {
+        lines.push('\nCertifications:');
+        profile.certifications.forEach(c => lines.push(`- ${c.name || ''}${c.issuer ? `, ${c.issuer}` : ''}${c.issueDate ? ` (${[c.issueDate, c.expiryDate].filter(Boolean).join(' - ')})` : ''}`));
+    }
     return lines.length ? lines.join('\n') : null;
 }
 

@@ -452,6 +452,15 @@
                 </div>
                 <div>
                     <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Certifications</h3>
+                        <button onclick="openEntryForm('certifications')" class="icon-btn" title="Add certification">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                    </div>
+                    <div id="profile-certifications-list" class="flex flex-col gap-2"></div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
                         <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Organizations</h3>
                         <button onclick="openEntryForm('organizations')" class="icon-btn" title="Add organization">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M12 5v14M5 12h14"/></svg>
@@ -637,9 +646,17 @@
                 { key: 'title', label: 'Project Name', type: 'text' },
                 { key: 'type', label: 'Type / Context', type: 'text' },
                 { key: 'description', label: 'Description', type: 'textarea' }
+            ],
+            certifications: [
+                { key: 'name', label: 'Certification Name', type: 'text' },
+                { key: 'issuer', label: 'Issuing Organization', type: 'text' },
+                { key: 'issueDate', label: 'Issue Date', type: 'text' },
+                { key: 'expiryDate', label: 'Expiry Date (leave blank if it doesn\'t expire)', type: 'text' }
             ]
         };
-        const SECTION_LABELS = { experience: 'Experience', education: 'Education', languages: 'Language', organizations: 'Organization', projects: 'Project' };
+        const SECTION_LABELS = { experience: 'Experience', education: 'Education', languages: 'Language', organizations: 'Organization', projects: 'Project', skills: 'Skills', courses: 'Courses', certifications: 'Certification' };
+        // Skills/Courses 不是 ENTRY_FIELDS 那種多筆結構化資料，是單一字串陣列，整組覆蓋（不是逐筆新增/刪除）
+        const LIST_SECTIONS = ['skills', 'courses'];
 
         const US_STATES = [
             'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
@@ -2375,7 +2392,7 @@ ${buildProfileResumeContext(userProfile)}${buildResumeTemplateContext()}`;
             if (!p) return false;
             return !!(p.fullName || p.email || p.phone ||
                 p.experience?.length || p.education?.length || p.languages?.length || p.courses?.length ||
-                p.skills?.length || p.organizations?.length || p.projects?.length);
+                p.skills?.length || p.organizations?.length || p.projects?.length || p.certifications?.length);
         }
 
         function isProfileComplete(p) {
@@ -2449,6 +2466,10 @@ AI Tools: [Tool], [Tool]`;
                     if (pr.description) lines.push(`  ${pr.description}`);
                 });
             }
+            if (p.certifications?.length) {
+                lines.push('\nCertifications:');
+                p.certifications.forEach(c => lines.push(`- ${c.name || ''}${c.issuer ? `, ${c.issuer}` : ''}${c.issueDate ? ` (${[c.issueDate, c.expiryDate].filter(Boolean).join(' - ')})` : ''}`));
+            }
             return lines.join('\n');
         }
 
@@ -2469,6 +2490,9 @@ AI Tools: [Tool], [Tool]`;
             } else if (section === 'projects') {
                 title = e.title || '';
                 subtitle = e.type || '';
+            } else if (section === 'certifications') {
+                title = e.name || '';
+                subtitle = [e.issuer, [e.issueDate, e.expiryDate].filter(Boolean).join(' - ')].filter(Boolean).join(' · ');
             }
             const initial = (title || subtitle || '?').trim().charAt(0).toUpperCase() || '?';
             return `
@@ -2503,7 +2527,7 @@ AI Tools: [Tool], [Tool]`;
             document.getElementById('courses-chips').innerHTML = (userProfile.courses || [])
                 .map(c => `<span class="text-[10px] font-bold px-3 py-1 bg-slate-100 text-slate-500 rounded-full">${escapeHtml(c)}</span>`).join('');
 
-            ['experience', 'education', 'languages', 'organizations', 'projects'].forEach(section => {
+            ['experience', 'education', 'languages', 'organizations', 'projects', 'certifications'].forEach(section => {
                 const list = document.getElementById(`profile-${section}-list`);
                 const items = userProfile[section] || [];
                 list.innerHTML = items.length
@@ -2685,7 +2709,8 @@ JSON 格式：
   "languages": [{"language":"語言名稱","proficiency":"熟練度，從以下五選一：Native or bilingual proficiency / Full professional proficiency / Professional working proficiency / Limited working proficiency / Elementary proficiency"}],
   "courses": ["課程名稱1","課程名稱2"],
   "organizations": [{"role":"角色","org":"組織名稱","startDate":"","endDate":""}],
-  "projects": [{"title":"專案名稱","type":"類型或背景","description":"說明"}]
+  "projects": [{"title":"專案名稱","type":"類型或背景","description":"說明"}],
+  "certifications": [{"name":"證照名稱","issuer":"發證單位","issueDate":"取得日期","expiryDate":"到期日，沒有就留空"}]
 }
 履歷裡沒有的區塊就回傳空陣列或空字串，不要編造內容。`;
 
@@ -2727,6 +2752,7 @@ JSON 格式：
                     courses: Array.isArray(parsed.courses) ? parsed.courses : [],
                     organizations: withIds(parsed.organizations),
                     projects: withIds(parsed.projects),
+                    certifications: withIds(parsed.certifications),
                     updatedAt: serverTimestamp()
                 });
                 document.getElementById('profile-resume-input').value = '';
@@ -2747,6 +2773,9 @@ JSON 格式：
                 const fields = ENTRY_FIELDS[section].map(f => `${f.key}${f.type === 'select' ? ` (只能是：${f.options.join(' / ')})` : ''}`).join('、');
                 return `  - "${section}"（${SECTION_LABELS[section]}）欄位：${fields}`;
             }).join('\n');
+            const listSectionSchemas = LIST_SECTIONS.map(section =>
+                `  - "${section}"（${SECTION_LABELS[section]}，字串陣列，整組覆蓋不是逐筆新增）：op 一律用 "setList"，id 給空字串，data 格式固定是 {"items":["項目1","項目2",...]}，items 要包含她想保留的全部項目（她現有的 + 新增的），因為這是整組覆蓋，漏掉的項目會被刪掉`
+            ).join('\n');
 
             const { updatedAt, ...profileData } = userProfile;
 
@@ -2775,6 +2804,7 @@ ${JSON.stringify(profileData)}
 
 可以操作的 section 與各自欄位：
 ${sectionSchemas}
+${listSectionSchemas}
   - "basic"（基本資料）欄位：fullName、email、phone
 
 她目前所有職缺的摘要（JSON 陣列，只給統計/查詢用得到的欄位，不含完整職缺描述全文）：
@@ -2787,10 +2817,10 @@ ${buildScoringRubricText()}
 {
   "reply": "給 Chloe 看的自然語言回覆",
   "action": null，或者當她明確要求改動 Profile 時給：{
-    "op": "add" 或 "update" 或 "delete",
-    "section": "experience/education/languages/organizations/projects 其中一個，或 basic",
-    "id": "op 是 update 或 delete 時，填現有那筆資料的 id；op 是 add 或 section 是 basic 時填空字串",
-    "data": op 是 delete 時給 null，否則給一個物件，欄位照上面列出的欄位名稱（update 時只需要給想改的欄位，其他會保留原值）
+    "op": "add" 或 "update" 或 "delete" 或 "setList",
+    "section": "experience/education/languages/organizations/projects/skills/courses 其中一個，或 basic",
+    "id": "op 是 update 或 delete 時，填現有那筆資料的 id；op 是 add、setList，或 section 是 basic 時填空字串",
+    "data": op 是 delete 時給 null；section 是 skills 或 courses（op 固定是 setList）時給 {"items":[...]}（整組覆蓋，見上面 skills/courses 的說明）；其他情況給一個物件，欄位照上面列出的欄位名稱（update 時只需要給想改的欄位，其他會保留原值）
   }
 }
 單純聊天、澄清問題、職缺統計問答、評分標準說明，或她還沒明確說要改什麼的時候，action 一律給 null。`;
@@ -2840,6 +2870,7 @@ ${buildScoringRubricText()}
         // 用 action.section/id 去現有 Profile 查出目前名稱，當「建議：修改／刪除 XXX」的標籤內容，方便套用前核對是不是認錯對象
         function describeAssistantAction(action) {
             if (action.section === 'basic') return `${action.op === 'update' ? '修改' : '新增'}基本資料`;
+            if (LIST_SECTIONS.includes(action.section)) return `整組更新 ${SECTION_LABELS[action.section]}`;
             const verb = { add: '新增', update: '修改', delete: '刪除' }[action.op] || action.op;
             const label = SECTION_LABELS[action.section] || action.section;
             if (action.op === 'add') return `${verb} ${label}`;
@@ -2891,6 +2922,9 @@ ${buildScoringRubricText()}
             try {
                 if (section === 'basic') {
                     await setDoc(profileRef(), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+                } else if (LIST_SECTIONS.includes(section)) {
+                    const items = Array.isArray(data?.items) ? data.items : [];
+                    await setDoc(profileRef(), { [section]: items, updatedAt: serverTimestamp() }, { merge: true });
                 } else {
                     const list = [...(userProfile[section] || [])];
                     if (op === 'add') {
