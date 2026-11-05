@@ -11,6 +11,18 @@ const US_STATES = [
     'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah',
     'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'
 ];
+// Handshake「At a glance」區塊的地點文字是縮寫（例如 "MA"），這裡轉成 US_STATES 的完整州名
+const STATE_ABBR_TO_NAME = {
+    AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado',
+    CT: 'Connecticut', DE: 'Delaware', DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia',
+    HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky',
+    LA: 'Louisiana', ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota',
+    MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire',
+    NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota',
+    OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island',
+    SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+    VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming'
+};
 const isOverloaded = (status, msg) => status === 503 || status === 429 || /high demand|overloaded/i.test(msg || "");
 
 function notify(title, message) {
@@ -72,10 +84,27 @@ function extractJobInfo() {
     const isHandshake = location.hostname.includes('joinhandshake.com');
     const isIndeed = location.hostname.includes('indeed.com');
     let title = "", company = "", jd = "", easyApply = false, closed = false;
+    let salary = "", location_ = "", jobType = "", workAuth = "";
 
     if (isLinkedIn) {
         const parts = document.title.replace(/^\(\d+\)\s*/, '').split('|').map(s => s.trim());
         if (parts.length >= 3) { title = parts[0]; company = parts[1]; }
+
+        // 備援規則：document.title 格式跑掉時（例如版型改了、介面語言不是英文導致
+        // 「| LinkedIn」這段文字不同，split('|') 就湊不出 3 段），改用頁面上的穩定
+        // 網址樣式——公司名稱固定連到 /company/<slug>/、職缺標題連結固定是
+        // /jobs/view/<職缺ID>（用目前分頁網址裡的職缺 ID 鎖定，避免抓到側邊欄
+        // 「相似職缺」裡其他職缺的標題連結）。不是 class，class 一樣是動態雜湊不能用。
+        if (!company) {
+            company = document.querySelector('a[href*="linkedin.com/company/"]')?.innerText?.trim() || "";
+        }
+        if (!title) {
+            const jobIdMatch = location.pathname.match(/\/jobs\/view\/(\d+)/);
+            if (jobIdMatch) {
+                title = document.querySelector(`a[href*="/jobs/view/${jobIdMatch[1]}"]`)?.innerText?.trim() || "";
+            }
+        }
+
         closed = /no longer accepting applications/i.test(document.body.innerText);
         easyApply = [...document.querySelectorAll('button')].some(b => /easy apply|快速應徵/i.test(b.innerText));
 
@@ -131,6 +160,12 @@ function extractJobInfo() {
             const links = container ? [...container.querySelectorAll('a[href^="/e/"]')] : [];
             company = links.map(a => a.innerText.trim()).find(t => t) || '';
         }
+        if (!company) {
+            // 第二備援：有些版型公司名稱不是連結，是職稱 h1 正上方那一行純文字
+            // （沒有 data-hook、也不是 /e/ 連結，驗證過的真實頁面確實有這種版型）。
+            // h1 的「上一個相鄰元素」就是這行文字，不用猜 class。
+            company = document.querySelector('main h1')?.previousElementSibling?.innerText?.trim() || "";
+        }
 
         // 錨點：h*(文字完全等於「Job description」) -> 父層 -> 下一個相鄰 div
         const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
@@ -147,10 +182,42 @@ function extractJobInfo() {
         closed = /no longer accepting|job (?:is )?closed|position filled|this job (?:has expired|is no longer available)/i.test(
             heading?.closest('main,section,article')?.innerText || document.body.innerText.slice(0, 2000)
         );
+
+        // 「At a glance」區塊（薪資／地點／工作型態／工作許可）：跟 JD 全文一樣，
+        // class 是動態雜湊不能當選擇器，用「文字完全等於 'At a glance' 的 heading」
+        // -> 往上找共同容器 -> 每一行用內容本身的樣式分類（不是位置），因為職缺之間
+        // 顯示的行數／順序不保證一致（例如沒有強制工作許可要求時，整行就不會出現）。
+        // 這些是 Handshake 自己結構化標出來的資料，比 Gemini 從 JD 全文猜測準確，
+        // 之後在 analyze() 裡會優先採用這裡抓到的值，Gemini 的猜測只當退路。
+        const glanceHeading = [...document.querySelectorAll('h1,h2,h3,h4')]
+            .find(el => el.textContent?.trim().toLowerCase() === 'at a glance');
+        const glanceContainer = glanceHeading?.parentElement?.parentElement;
+        if (glanceContainer) {
+            const rows = [...glanceContainer.querySelectorAll('svg')]
+                .map(svg => svg.nextElementSibling)
+                .filter(el => el && el.children && el.children.length);
+            for (const row of rows) {
+                const main = (row.children[0]?.innerText || '').trim();
+                const sub = (row.children[1]?.innerText || '').trim();
+                if (/\$[\d,]/.test(main)) {
+                    salary = main.replace(/\s+/g, ' ').trim();
+                } else if (main.toLowerCase() === 'job') {
+                    jobType = sub;
+                } else if (/^(remote|hybrid|on-?site)/i.test(main)) {
+                    location_ = main;
+                }
+            }
+            // 工作許可那一行有獨立的語意化屬性 data-hook，比其他行更穩定，直接查就好
+            workAuth = document.querySelector('[data-hook="work-auth-title"]')?.innerText?.trim() || "";
+        }
     }
     // 其餘未支援的網站：不掃描頁面，直接回傳空 jd，交由呼叫端判定為擷取失敗
 
-    return { title, company, jd, easyApply, closed, url: location.href.split('?')[0] };
+    return {
+        title, company, jd, easyApply, closed,
+        salary, location: location_, jobType, workAuth,
+        url: location.href.split('?')[0]
+    };
 }
 
 function waitForTabComplete(tabId, timeoutMs = 20000) {
@@ -245,17 +312,39 @@ async function analyze({ url, tabId }) {
 
 第一步：從 Chloe 的六份履歷版本中，比對各版本的具體經歷描述與 JD 要求的重疊程度，選出最適合這個職缺的一份（不要只看版本名稱）。
 
-第二步：只針對第一步選定的那份履歷，逐項檢查：
-(a) JD 是否有明確列出「必要條件」（年級、學位、簽證身份、特定證照、必備年資等）？選定履歷是否全部符合？
-(b) JD 列出的核心職責（Responsibilities / What You'll Do 等段落），選定履歷裡有幾項能找到具體對應的經歷？哪些沒有對應到？
-(c) JD 明確提到的技能／工具／技術關鍵字，選定履歷的文字裡有哪些命中、哪些缺漏？
+第二步：只針對第一步選定的那份履歷，依照以下公式逐項計分，不要用整體印象打分：
 
-第三步：根據以下級距給分數，分數代表「這份履歷投遞後，通過 ATS 關鍵字篩選與招募人員初步篩選的機率」，不要因為這是六選一裡最好的就自動給高分：
-9-10 分：必要條件全滿足、核心職責幾乎逐項對應、關鍵字大多命中——ATS 和人工都很可能通過
-7-8 分：必要條件滿足、核心職責覆蓋六至八成、關鍵字命中多數——大機率通過 ATS，人工掃過也有印象
-5-6 分：必要條件滿足，但核心職責只覆蓋一半左右、或關鍵字明顯缺漏——可能通過寬鬆的 ATS，嚴格篩選容易被刷掉
-3-4 分：核心職責覆蓋率低、關鍵字大量缺漏，履歷跟職缺關聯薄弱
-0-2 分：不符合 JD 明確列出的必要條件，或六份履歷都跟此職缺缺乏實質相關性——很可能第一關就被刷掉
+(A) 職責符合度，滿分 5 分：
+把 JD 的主要職責拆成條列（通常 5-10 條）。每一條依選定履歷：完全對應給 1 分、部分對應／做過類似的事給 0.5 分、完全沒對應給 0 分。
+職責符合度 = (所有條目分數總和 ÷ 條目數) × 5。
+
+(B) 必填工具符合度，滿分 3 分：
+只列出 JD 明確標示為「必要／基本資格」的工具與系統（required、must have、基本條件），不要把「加分項／優先／nice to have」的工具算進來——這些另外列出，不計分，僅供參考。
+必填工具符合度 = (選定履歷能主張的必填工具數 ÷ 必填工具總數) × 3。一項工具只有在履歷明確提過才算有；JD 說「或同類工具」才能算近似工具相符，否則不算。
+若 JD 完全沒有列出任何必填工具，直接給 1.5 分。
+
+(C) 方向契合度，滿分 2 分（固定值，不按比例計算）：
+- Product Management / Product Analyst 類職缺：2 分
+- Business Intelligence / Data Analytics 類職缺：1.5 分
+- Marketing Analytics / Growth Analytics 類職缺：1 分
+- 其他分析類或營運類職缺：0.5 分
+- 完全不相關（例如現場製作、客服、純銷售）：0 分
+
+第三步：總分 = 職責符合度 + 必填工具符合度 + 方向契合度，四捨五入到小數一位（0 到 10 分）。
+
+評分時務必遵守：
+- 忽略 JD 要求的「年資」，新鮮人／實習職缺的年資要求通常只是參考門檻，不要因為年資不符扣分。
+- JD 提到的美國地點、是否需要簽證贊助（sponsorship），都不算扣分項目——候選人持 OPT 身份可合法在美工作，不需要雇主辦理簽證贊助。
+- 只能引用選定履歷裡明確出現的事實，不可編造、不可誇大。以下說法絕對不能出現：具體的業績配額百分比數字、ROAS 相關 dashboard、具體營收佔比數字、定價 A/B 測試、包裝策略建議、把任何探索性／實驗性模型描述成「成功預測」。
+
+第四步：列出風險旗標（不影響分數，沒有就寫「無風險」）：
+- JD 要求「在校大學生」或「僅限大學部」
+- JD 要求工程相關學位
+- JD 要求安全許可
+- 到職日期風險
+- JD 明確寫不提供現在或未來的簽證贊助
+- 需要常駐現場或頻繁出差
+- JD 把選定履歷完全沒有的經驗當作核心必要條件
 
 候選人背景：MSBA 學生（Boston University，2027/1 畢業）。
 
@@ -273,13 +362,18 @@ ${resumeSection}
 薪資: [範圍，未提供則寫 未提供]
 建議履歷: [${RESUME_TAGS.join('、')} 其中之一]
 履歷理由: [一句話說明為何這份履歷的哪些具體經歷最貼合 JD]
-必要條件: [符合／不符合，若不符合列出缺少哪些條件]
-職責覆蓋: [X/Y 項對應，列出未覆蓋的職責]
-關鍵字命中: [列出命中的關鍵字，無則寫 無]
-關鍵字缺漏: [列出缺漏的關鍵字，無則寫 無]
-分數: [0-10，嚴格依照上述級距]
-理由: [兩句話總結，需緊扣上面的職責覆蓋與關鍵字分析]
-建議: [針對關鍵字缺漏與職責缺口，具體建議如何調整履歷內容以提高通過篩選的機率]`;
+職責符合度明細: [逐項列出 JD 職責與對應分數 1/0.5/0，用頓號分隔]
+職責符合度分數: [0-5，一位小數]
+必填工具明細: [逐項列出 JD 必要工具與是否命中，用頓號分隔；JD 沒列必填工具就寫 JD未列出必填工具]
+必填工具分數: [0-3，一位小數；JD 沒列必填工具固定給 1.5]
+加分工具參考: [JD 列出的優先／加分工具，不計分，無則寫 無]
+方向類別: [Product Management/Business Intelligence/Marketing Analytics/Other Analytical or Operations/Unrelated 其中之一]
+方向分數: [0/0.5/1/1.5/2 其中之一，對應方向類別]
+分數: [0到10，=職責符合度分數+必填工具分數+方向分數，四捨五入一位小數]
+風險旗標: [逐項列出風險，用頓號分隔；沒有風險就寫 無風險]
+理由: [兩句話總結，需緊扣上面的職責符合度與必填工具明細]
+建議: [針對缺漏的必填工具與未覆蓋的職責，具體建議如何調整履歷內容以提高通過篩選的機率]
+建議優先度: [分數大於等於6寫 分數達標建議製作客製化履歷；小於6寫 分數偏低暫不建議製作客製化履歷]`;
 
         const aiText = await callGemini(geminiKey, {
             contents: [{ parts: [{ text: `JD內容:\n${job.jd.slice(0, 12000)}` }] }],
@@ -303,20 +397,36 @@ ${resumeSection}
             throw new Error(`Gemini 回覆格式不符預期，未包含「建議履歷」或「分數」欄位。原始回覆開頭：${aiText.slice(0, 200)}`);
         }
 
+        // Handshake 的「At a glance」是網站自己結構化標出來的資料（見 extractJobInfo），
+        // 比 Gemini 從 JD 全文猜測準確，優先採用；其他平台（LinkedIn/Indeed）沒有這個區塊，
+        // 這些值自然是空字串，就照原本的方式退回 Gemini 的猜測。
+        let domState = "", domCity = "", domType = "";
+        const styleMatch = (job.location || "").match(/^(remote|hybrid|on-?site)/i);
+        if (styleMatch) {
+            const style = styleMatch[1].toLowerCase();
+            domType = style.startsWith('remote') ? 'Remote' : style.startsWith('hybrid') ? 'Hybrid' : 'On-site';
+        }
+        const placeMatch = (job.location || "").match(/based in\s+([^,]+),\s*([A-Za-z]{2})\b/i);
+        if (placeMatch) {
+            domCity = placeMatch[1].trim();
+            domState = STATE_ABBR_TO_NAME[placeMatch[2].toUpperCase()] || "";
+        }
+        const domCategory = job.jobType ? job.jobType.replace(/internship/i, 'Intern') : "";
+
         const payload = {
             title: job.title || grab('職稱'),
             company: job.company || grab('公司'),
-            state: grab('州'),
-            city: grab('城市'),
-            category: grab('類別'),
-            type: grab('工作型態'),
+            state: domState || grab('州'),
+            city: domCity || grab('城市'),
+            category: domCategory || grab('類別'),
+            type: domType || grab('工作型態'),
             score: parseFloat((scoreRaw.match(/[\d.]+/) || [0])[0]) || 0,
-            salary: grab('薪資'),
+            salary: job.salary || grab('薪資'),
             jobUrl: job.url,
             jobDescription: job.jd,
             resumeTag,
             easyApply: job.easyApply,
-            notes: `${job.closed ? '⚠️【注意】此職缺已停止收件（No longer accepting applications）\n\n' : ''}【建議履歷】${resumeTag || resumeTagRaw}\n${grab('履歷理由')}\n\n【篩選機率分析】\n必要條件：${grab('必要條件') || '未評估'}\n職責覆蓋：${grab('職責覆蓋') || '未評估'}\n關鍵字命中：${grab('關鍵字命中') || '未評估'}\n關鍵字缺漏：${grab('關鍵字缺漏') || '未評估'}\n\n【分析理由】\n${grab('理由')}\n\n【對策建議】\n${grab('建議')}`
+            notes: `${job.closed ? '⚠️【注意】此職缺已停止收件（No longer accepting applications）\n\n' : ''}${job.workAuth ? `🛂【地點要求】${job.workAuth}\n\n` : ''}【建議履歷】${resumeTag || resumeTagRaw}\n${grab('履歷理由')}\n\n【評分明細】\n職責符合度：${grab('職責符合度分數') || '未評估'}/5（${grab('職責符合度明細') || '無資料'}）\n必填工具符合度：${grab('必填工具分數') || '未評估'}/3（${grab('必填工具明細') || '無資料'}）\n加分工具參考：${grab('加分工具參考') || '無'}\n方向契合度：${grab('方向類別') || '未評估'}（${grab('方向分數') || '未評估'}/2）\n\n【風險旗標】\n${grab('風險旗標') || '無風險'}\n\n【分析理由】\n${grab('理由')}\n\n【對策建議】\n${grab('建議')}\n\n【優先度】\n${grab('建議優先度') || '未評估'}`
         };
 
         if (createdTabId) { await chrome.tabs.remove(createdTabId).catch(() => {}); createdTabId = null; }
